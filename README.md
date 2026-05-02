@@ -1,4 +1,4 @@
-# WarehouseIQ — Store Management System
+    # WarehouseIQ — Store Management System
 ### A PyQt5 Desktop App solving 6 real-world business bottlenecks
 
 Quick run instructions are in [RUNNING.md](./RUNNING.md).
