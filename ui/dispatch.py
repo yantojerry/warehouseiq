@@ -22,7 +22,6 @@ from utils.api_client import (
     API_BASE_URL,
     ApiError,
     get_dispatch_queue,
-    get_order,
     list_inventory,
     update_dispatch_item,
     update_order_notes,
@@ -48,6 +47,7 @@ class DispatchPage(QWidget):
         self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self.inventory = []
+        self._socket_backoff_seconds = 2
         self._build_ui()
         self._connect_dispatch_socket()
         self.refresh()
@@ -62,9 +62,18 @@ class DispatchPage(QWidget):
     def _connect_dispatch_socket(self):
         self.socket = QWebSocket()
         self.socket.textMessageReceived.connect(lambda _message: self.refresh())
-        self.socket.disconnected.connect(lambda: QTimer.singleShot(3000, self._connect_dispatch_socket))
+        self.socket.connected.connect(self._reset_dispatch_socket_backoff)
+        self.socket.disconnected.connect(self._schedule_dispatch_socket_reconnect)
         ws_url = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://").rstrip("/")
         self.socket.open(QUrl(f"{ws_url}/dispatch/ws"))
+
+    def _reset_dispatch_socket_backoff(self):
+        self._socket_backoff_seconds = 2
+
+    def _schedule_dispatch_socket_reconnect(self):
+        delay = self._socket_backoff_seconds
+        self._socket_backoff_seconds = min(delay * 2, 30)
+        QTimer.singleShot(delay * 1000, self._connect_dispatch_socket)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -222,14 +231,8 @@ class DispatchPage(QWidget):
         self.dispatch_layout.addStretch()
 
     def _dispatch_card(self, order):
-        try:
-            payload = get_order(order["id"])
-            order_details = payload.get("order", {})
-            items = payload.get("items", [])
-            current_note = order_details.get("notes")
-        except ApiError:
-            items = []
-            current_note = order.get("notes")
+        items = order.get("items") or []
+        current_note = order.get("notes")
 
         card = QFrame()
         card.setObjectName("card")

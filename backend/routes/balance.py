@@ -19,7 +19,7 @@ def customer_balances():
                    i.id AS invoice_id, i.invoice_number, i.total_amount,
                    i.amount_paid, i.status, i.payment_method, i.issued_at
             FROM customers c
-            LEFT JOIN invoices i ON i.customer_name = c.full_name
+            LEFT JOIN invoices i ON i.customer_id = c.id
             WHERE c.balance > 0 OR i.status IN ('Partial', 'Unpaid', 'Pending')
             ORDER BY c.full_name ASC, i.issued_at DESC
             """

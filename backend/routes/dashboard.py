@@ -132,7 +132,7 @@ def get_dashboard_overview(request: Request):
                        COUNT(*) AS invoices_today
                 FROM invoices
                 WHERE status != 'Cancelled'
-                  AND DATE(issued_at) = DATE('now')
+                  AND DATE(issued_at) = CURDATE()
                 """
             )
             sales_summary = cursor.fetchone() or {}

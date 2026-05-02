@@ -77,7 +77,7 @@ def main():
         show_login()
 
     except Exception as exc:
-        error_dialog(None, "MIHS Startup Error", str(exc))
+        error_dialog(None, "WarehouseIQ Startup Error", str(exc))
         return
 
     try:

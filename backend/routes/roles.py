@@ -294,7 +294,7 @@ def update_role_permissions(role_ref: str, payload: RolePermissionPayload, reque
         for permission_id, is_enabled in requested.items():
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+                INSERT IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
                 VALUES (?, ?, ?)
                 """,
                 (role["id"], permission_id, 1 if is_enabled else 0),

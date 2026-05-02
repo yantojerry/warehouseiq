@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/dispatch", tags=["Dispatch"])
 
 
 class PickStatusUpdate(BaseModel):
-    status: str = Field(..., min_length=1)
+    status: Literal["Pending", "Picked", "Partially Picked", "Out of Stock"]
     picked_quantity: Optional[int] = None
     actor: Optional[str] = "warehouse"
 
@@ -162,7 +162,10 @@ async def update_pick_status(order_id: int, item_id: int, payload: PickStatusUpd
     finally:
         cursor.close()
         connection.close()
-    await dispatch_hub.broadcast(update)
+    try:
+        await dispatch_hub.broadcast(update)
+    except Exception:
+        pass
     return {"message": "Pick status updated", **update}
 
 

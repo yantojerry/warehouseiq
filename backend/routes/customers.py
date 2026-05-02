@@ -45,14 +45,14 @@ def ensure_customers_table():
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS customers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                full_name TEXT NOT NULL,
-                contact_number TEXT,
-                customer_type TEXT DEFAULT 'Walk-in',
-                total_purchases REAL DEFAULT 0.0,
-                balance REAL DEFAULT 0.0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                full_name VARCHAR(255) NOT NULL,
+                contact_number VARCHAR(255),
+                customer_type VARCHAR(255) DEFAULT 'Walk-in',
+                total_purchases DECIMAL(10,2) DEFAULT 0.00,
+                balance DECIMAL(10,2) DEFAULT 0.00,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
             """
         )

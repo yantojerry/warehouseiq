@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -26,7 +27,7 @@ from utils.api_client import (
     update_permission,
     update_role_permissions,
 )
-from utils.styles import make_badge, set_button_kind
+from utils.styles import COLORS, set_button_kind
 
 
 MODULE_KEYS = [
@@ -89,10 +90,12 @@ class RoleTaskManagementPage(QWidget):
         new_role.clicked.connect(self.add_role)
         header.addWidget(new_role)
 
-        self.save_permissions_btn = QPushButton("Save Permissions")
-        set_button_kind(self.save_permissions_btn, "teal")
-        self.save_permissions_btn.clicked.connect(self.save_permissions)
-        header.addWidget(self.save_permissions_btn)
+        self.save_task_btn = QPushButton("Save Task")
+        self.save_task_btn.setMinimumHeight(34)
+        set_button_kind(self.save_task_btn, "teal")
+        self.save_task_btn.clicked.connect(self.save_task)
+        header.addWidget(self.save_task_btn)
+
         root.addLayout(header)
 
         body = QHBoxLayout()
@@ -116,6 +119,11 @@ class RoleTaskManagementPage(QWidget):
         self.perm_count_label.setObjectName("page_subtitle")
         list_header_layout.addWidget(self.perm_count_label)
         list_header_layout.addStretch()
+        self.save_permissions_btn = QPushButton("Save Permissions")
+        self.save_permissions_btn.setMinimumHeight(32)
+        set_button_kind(self.save_permissions_btn, "teal")
+        self.save_permissions_btn.clicked.connect(self.save_permissions)
+        list_header_layout.addWidget(self.save_permissions_btn)
         left.addWidget(list_header)
 
         self.scroll = QScrollArea()
@@ -162,12 +170,7 @@ class RoleTaskManagementPage(QWidget):
         self.new_task_btn.setMinimumHeight(34)
         set_button_kind(self.new_task_btn, "outline")
         self.new_task_btn.clicked.connect(self.clear_form)
-        self.save_task_btn = QPushButton("Save Task")
-        self.save_task_btn.setMinimumHeight(34)
-        set_button_kind(self.save_task_btn, "teal")
-        self.save_task_btn.clicked.connect(self.save_task)
         btns.addWidget(self.new_task_btn)
-        btns.addWidget(self.save_task_btn)
         form.addLayout(btns)
         form.addStretch()
         body.addWidget(form_card, 1)
@@ -245,6 +248,7 @@ class RoleTaskManagementPage(QWidget):
         self.perm_count_label.setText(f"{enabled} of {total} enabled")
         is_super_admin_role = self.current_role_payload.get("name") == "Super Admin"
         self.save_permissions_btn.setEnabled(not is_super_admin_role)
+        self.permission_layout.addWidget(self._permission_header())
         for category, rows in grouped.items():
             self.permission_layout.addWidget(self._separator())
             header = QLabel(category.upper())
@@ -255,41 +259,117 @@ class RoleTaskManagementPage(QWidget):
                 self.permission_layout.addWidget(self._permission_row(permission, disabled=is_super_admin_role))
         self.permission_layout.addStretch()
 
+    def _permission_header(self):
+        row = QFrame()
+        row.setObjectName("role_tasks_header")
+        row.setFixedHeight(30)
+        layout = QGridLayout(row)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setHorizontalSpacing(12)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnMinimumWidth(1, 150)
+        layout.setColumnMinimumWidth(2, 164)
+
+        for text, col, align in [
+            ("TASK", 0, Qt.AlignLeft | Qt.AlignVCenter),
+            ("MODULE", 1, Qt.AlignLeft | Qt.AlignVCenter),
+            ("ACTIONS", 2, Qt.AlignRight | Qt.AlignVCenter),
+        ]:
+            label = QLabel(text)
+            label.setObjectName("role_tasks_column_label")
+            label.setAlignment(align)
+            layout.addWidget(label, 0, col)
+        return row
+
     def _permission_row(self, permission, disabled=False):
         row = QFrame()
-        row.setObjectName("card_body")
-        row.setMinimumHeight(48)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(10)
+        row.setObjectName("role_task_row")
+        row.setMinimumHeight(62)
+        row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout = QGridLayout(row)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(2)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnMinimumWidth(1, 150)
+        layout.setColumnMinimumWidth(2, 164)
 
-        check = QCheckBox(permission.get("label") or permission.get("permission_key"))
-        check.setMinimumWidth(160)
-        check.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        task_cell = QWidget()
+        task_cell.setObjectName("transparent_cell")
+        task_layout = QHBoxLayout(task_cell)
+        task_layout.setContentsMargins(0, 0, 0, 0)
+        task_layout.setSpacing(10)
+
+        check = QCheckBox()
+        check.setFixedWidth(22)
+        check.setStyleSheet(
+            "QCheckBox {"
+            f" color: {COLORS['text']};"
+            " background: transparent;"
+            " spacing: 8px;"
+            "}"
+            "QCheckBox::indicator {"
+            " width: 16px;"
+            " height: 16px;"
+            " border-radius: 3px;"
+            f" border: 1px solid {COLORS['text_3']};"
+            f" background-color: {COLORS['white']};"
+            "}"
+            "QCheckBox::indicator:checked {"
+            f" background-color: {COLORS['teal']};"
+            f" border: 1px solid {COLORS['teal']};"
+            "}"
+            "QCheckBox::indicator:disabled {"
+            f" border: 1px solid {COLORS['border_2']};"
+            f" background-color: {COLORS['surface_2']};"
+            "}"
+        )
         check.setChecked(bool(permission.get("is_enabled")))
         check.setEnabled(not disabled)
-        layout.addWidget(check, 2)
         self._checks[permission["id"]] = check
 
-        permission_key = permission.get("permission_key") or "-"
-        badge = make_badge(permission_key, "gray")
-        badge.setMaximumWidth(160)
-        badge.setToolTip(permission_key)
-        badge.setText(badge.fontMetrics().elidedText(permission_key, Qt.ElideRight, 150))
-        layout.addWidget(badge)
+        task_text = QVBoxLayout()
+        task_text.setContentsMargins(0, 0, 0, 0)
+        task_text.setSpacing(1)
+        label = QLabel(permission.get("label") or permission.get("permission_key") or "Untitled task")
+        label.setObjectName("role_task_label")
+        label.setWordWrap(True)
+        key = QLabel(permission.get("permission_key") or "-")
+        key.setObjectName("role_task_key")
+        key.setWordWrap(True)
+        task_text.addWidget(label)
+        task_text.addWidget(key)
+
+        task_layout.addWidget(check, 0, Qt.AlignVCenter)
+        task_layout.addLayout(task_text, 1)
+        layout.addWidget(task_cell, 0, 0, Qt.AlignVCenter)
+
+        module = QLabel(permission.get("module_key") or "-")
+        module.setObjectName("role_task_meta")
+        module.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        module.setWordWrap(True)
+        layout.addWidget(module, 0, 1, Qt.AlignVCenter)
+
+        actions = QWidget()
+        actions.setObjectName("transparent_cell")
+        action_layout = QHBoxLayout(actions)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(8)
+        action_layout.addStretch()
 
         edit = QPushButton("Edit")
-        edit.setFixedSize(60, 28)
+        edit.setFixedSize(68, 30)
         set_button_kind(edit, "outline")
         edit.clicked.connect(lambda checked=False, data=permission: self.edit_task(data))
-        layout.addWidget(edit)
+        action_layout.addWidget(edit)
 
         delete = QPushButton("Delete")
-        delete.setFixedSize(70, 28)
+        delete.setFixedSize(78, 30)
         set_button_kind(delete, "danger")
         delete.setEnabled(not permission.get("is_system"))
         delete.clicked.connect(lambda checked=False, data=permission: self.delete_task(data))
-        layout.addWidget(delete)
+        action_layout.addWidget(delete)
+        layout.addWidget(actions, 0, 2, Qt.AlignVCenter)
         return row
 
     def edit_task(self, permission):
@@ -330,6 +410,14 @@ class RoleTaskManagementPage(QWidget):
         payload = self._form_payload()
         if not payload:
             return
+        action = "update" if self.editing_permission else "add"
+        if not confirm_dialog(
+            self,
+            "Confirm Task Change",
+            f"Do you want to {action} this task?\n\n{payload['label']}",
+            "Save Task",
+        ):
+            return
         try:
             if self.editing_permission:
                 permission = update_permission(self.editing_permission["id"], payload)
@@ -366,6 +454,14 @@ class RoleTaskManagementPage(QWidget):
             return
         if self.current_role_payload.get("name") == "Super Admin":
             warning_dialog(self, "Role Tasks", "Super Admin always has all permissions.")
+            return
+        role_name = self.current_role_payload.get("name", "this role")
+        if not confirm_dialog(
+            self,
+            "Confirm Permission Changes",
+            f"Save task access changes for {role_name}?",
+            "Save Permissions",
+        ):
             return
         try:
             update_role_permissions(self.selected_role_id(), self._collect_permission_payload())

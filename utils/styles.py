@@ -520,10 +520,86 @@ QPushButton#password_toggle {{
     font-weight: 800;
 }}
 
+#pos_numpad {{
+    background: transparent;
+}}
+
+QPushButton#pos_numpad_key, QPushButton#pos_numpad_action, QPushButton#pos_numpad_pay {{
+    border-radius: 6px;
+    min-height: 38px;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 800;
+}}
+
+QPushButton#pos_numpad_key {{
+    background-color: {COLORS["white"]};
+    color: {COLORS["text"]};
+    border: 1px solid {COLORS["border_2"]};
+}}
+
+QPushButton#pos_numpad_key:hover {{
+    background-color: {COLORS["surface"]};
+}}
+
+QPushButton#pos_numpad_action {{
+    background-color: transparent;
+    color: {COLORS["teal_light"]};
+    border: 1px solid {COLORS["teal"]};
+}}
+
+QPushButton#pos_numpad_action:hover {{
+    background-color: {COLORS["navy_2"]};
+}}
+
+QPushButton#pos_numpad_pay {{
+    background-color: {COLORS["teal"]};
+    color: {COLORS["white"]};
+    border: 1px solid {COLORS["teal"]};
+}}
+
 #pos_cart_row, #product_card {{
     background-color: {COLORS["white"]};
     border: 1px solid {COLORS["border"]};
     border-radius: 10px;
+}}
+
+#role_tasks_header {{
+    background-color: {COLORS["surface"]};
+    border: 1px solid {COLORS["border"]};
+    border-radius: 8px;
+}}
+
+#role_tasks_column_label {{
+    color: {COLORS["text_3"]};
+    background: transparent;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+}}
+
+#role_task_row {{
+    background-color: {COLORS["white"]};
+    border: 1px solid {COLORS["border"]};
+    border-radius: 8px;
+}}
+
+#role_task_label {{
+    color: {COLORS["text"]};
+    background: transparent;
+    font-size: 12.5px;
+    font-weight: 800;
+}}
+
+#role_task_key, #role_task_meta {{
+    color: {COLORS["text_3"]};
+    background: transparent;
+    font-size: 11px;
+    font-weight: 700;
+}}
+
+#transparent_cell {{
+    background: transparent;
 }}
 
 #product_card_selected {{

@@ -191,7 +191,7 @@ class OrdersPage(QWidget):
             customer_type = "Walk-in" if customer.strip().lower() == "walk-in" else "Wholesale"
             invoice_number = invoice.get("invoice_number") if invoice else order_number
             payment_status = self._payment_status(invoice, payment)
-            item_count = self._item_count(order_id)
+            item_count = row.get("item_count", 0)
 
             values = [
                 invoice_number,
@@ -224,14 +224,6 @@ class OrdersPage(QWidget):
             if paid > 0:
                 return "Partial"
         return "Unpaid"
-
-    @staticmethod
-    def _item_count(order_id):
-        try:
-            payload = get_order(order_id)
-            return len(payload.get("items") or [])
-        except ApiError:
-            return "-"
 
     def _make_action_buttons(self, order_id, status):
         widget = QWidget()

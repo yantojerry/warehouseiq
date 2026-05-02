@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import os
+import socket
 
 from fastapi import FastAPI
 import uvicorn
@@ -62,5 +64,17 @@ def health():
     return {"status": "ok"}
 
 
+def _port_is_in_use(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((host, port)) == 0
+
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="localhost", port=8000, reload=False)
+    host = os.getenv("WAREHOUSEIQ_API_HOST", "127.0.0.1")
+    port = int(os.getenv("WAREHOUSEIQ_API_PORT", "8000"))
+    if _port_is_in_use(host, port):
+        print(f"WarehouseIQ API is already running on http://{host}:{port}")
+        print("Close the existing backend process, or set WAREHOUSEIQ_API_PORT to use another port.")
+    else:
+        uvicorn.run("main:app", host=host, port=port, reload=False)

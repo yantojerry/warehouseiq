@@ -8,7 +8,7 @@ def authenticate_user(username, password):
     try:
         cursor.execute("SELECT * FROM users WHERE username = ? LIMIT 1", (username,))
         user = cursor.fetchone()
-        if user and verify_password(password, user.get("password_hash") or user.get("password")):
+        if user and verify_password(password, user.get("password_hash")):
             return user
         return None
     finally:
@@ -65,10 +65,10 @@ def seed_default_admin():
         if cursor.fetchone()[0] == 0:
             cursor.execute(
                 """
-                INSERT INTO users (username, password, password_hash, display_name, role, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users (username, password_hash, display_name, role, status)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
+                ("admin", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
             )
             conn.commit()
     finally:

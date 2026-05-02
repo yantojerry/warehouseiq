@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -59,7 +59,7 @@ class DashboardPage(QWidget):
         header = QHBoxLayout()
         title_block = QVBoxLayout()
         title_block.setSpacing(3)
-        self.title = QLabel(f"Good morning, {self.username}")
+        self.title = QLabel(f"{self._greeting()}, {self.username}")
         self.title.setObjectName("page_title")
         self.subtitle = QLabel("")
         self.subtitle.setObjectName("page_subtitle")
@@ -425,6 +425,15 @@ class DashboardPage(QWidget):
                 self.orders_table.setItem(row_index, col, table_item(value, mono=col in {0, 2}, bold=col in {0, 2}))
             self.orders_table.setCellWidget(row_index, 3, make_badge(display_status, tone_for_status(display_status)))
             self.orders_table.setRowHeight(row_index, 38)
+
+    @staticmethod
+    def _greeting():
+        hour = datetime.now().hour
+        if hour < 12:
+            return "Good morning"
+        if hour < 18:
+            return "Good afternoon"
+        return "Good evening"
 
     @staticmethod
     def _clear_layout(layout):

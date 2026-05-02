@@ -195,7 +195,7 @@ def record_payment(payment_id: int, payload: PaymentRecord):
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT total_amount, amount_paid FROM payments WHERE id = %s",
+            "SELECT total_amount, amount_paid, invoice_id FROM payments WHERE id = %s",
             (payment_id,),
         )
         payment = cursor.fetchone()
@@ -222,6 +222,15 @@ def record_payment(payment_id: int, payload: PaymentRecord):
             """,
             (new_paid_total, payment_status, payment_id),
         )
+        if payment.get("invoice_id"):
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET amount_paid = %s, status = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (new_paid_total, payment_status, payment["invoice_id"]),
+            )
         cursor.execute(
             """
             INSERT INTO payment_history (payment_id, amount_paid, payment_method, note, recorded_by)

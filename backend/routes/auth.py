@@ -41,14 +41,14 @@ def login(payload: LoginRequest):
     try:
         cursor.execute(
             """
-            SELECT id, username, password, password_hash, display_name, role, status, created_at
+            SELECT id, username, password_hash, display_name, role, status, created_at
             FROM users
             WHERE username = ?
             """,
             (payload.username,),
         )
         user = cursor.fetchone()
-        if not user or not verify_password(payload.password, user.get("password_hash") or user.get("password")):
+        if not user or not verify_password(payload.password, user.get("password_hash")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
@@ -117,12 +117,11 @@ def register(payload: RegisterRequest):
             )
         cursor.execute(
             """
-            INSERT INTO users (username, password, password_hash, display_name, role, status)
-            VALUES (?, ?, ?, ?, ?, 'Active')
+            INSERT INTO users (username, password_hash, display_name, role, status)
+            VALUES (?, ?, ?, ?, 'Active')
             """,
             (
                 payload.username,
-                payload.password,
                 hash_password(payload.password),
                 payload.display_name or payload.username,
                 role,

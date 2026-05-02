@@ -1,10 +1,12 @@
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlite3 import Error
 
+from backend.security import current_user_from_request
 from database.connection import get_connection
+from utils.helpers import generate_order_number
 
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -23,7 +25,12 @@ class OrderCreate(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    status: str = Field(..., min_length=1, max_length=50)
+    status: Literal["Pending", "Processing", "Ready", "Completed", "Cancelled"]
+
+
+def _is_duplicate_key_error(exc):
+    text = str(exc).lower()
+    return "duplicate" in text or "unique" in text
 
 
 class OrderNotesUpdate(BaseModel):
@@ -38,7 +45,17 @@ def list_orders(
     connection = get_connection()
     cursor = connection.cursor(dictionary=True)
     try:
-        query = "SELECT * FROM orders WHERE 1=1"
+        query = """
+            SELECT o.*,
+                   COALESCE(item_counts.item_count, 0) AS item_count
+            FROM orders o
+            LEFT JOIN (
+                SELECT order_id, COUNT(*) AS item_count
+                FROM order_items
+                GROUP BY order_id
+            ) item_counts ON item_counts.order_id = o.id
+            WHERE 1=1
+        """
         params = []
         if status_filter:
             query += " AND status = %s"
@@ -46,7 +63,7 @@ def list_orders(
         if exclude_status:
             query += " AND status != %s"
             params.append(exclude_status)
-        query += " ORDER BY created_at DESC"
+        query += " ORDER BY o.created_at DESC"
 
         cursor.execute(query, tuple(params))
         return cursor.fetchall()
@@ -69,7 +86,7 @@ def list_available_orders():
             """
             SELECT id, order_number, total_amount
             FROM orders
-            WHERE status != 'Cancelled'
+            WHERE status NOT IN ('Cancelled', 'Completed')
             ORDER BY created_at DESC
             """
         )
@@ -162,7 +179,7 @@ def update_order_notes(order_id: int, payload: OrderNotesUpdate):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_order(payload: OrderCreate):
+def create_order(payload: OrderCreate, request: Request):
     if not payload.items:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -172,12 +189,13 @@ def create_order(payload: OrderCreate):
     connection = get_connection()
     cursor = connection.cursor(dictionary=True)
     try:
+        created_by = current_user_from_request(request).get("username")
         total_amount = 0.0
         inventory_rows = []
         for order_item in payload.items:
             cursor.execute(
                 """
-                SELECT id, item_name, quantity, unit_price
+                SELECT id, item_name, unit_price
                 FROM inventory
                 WHERE id = %s
                 """,
@@ -189,32 +207,54 @@ def create_order(payload: OrderCreate):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Inventory item {order_item.item_id} not found",
                 )
-            if order_item.quantity > inventory_item["quantity"]:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Only {inventory_item['quantity']} units available for "
-                        f"{inventory_item['item_name']}"
-                    ),
-                )
             inventory_rows.append((order_item, inventory_item))
             total_amount += order_item.quantity * float(inventory_item["unit_price"])
 
-        cursor.execute(
-            """
-            INSERT INTO orders (order_number, customer_name, status, total_amount, notes)
-            VALUES (%s, %s, 'Pending', %s, %s)
-            """,
-            (
-                payload.order_number,
-                payload.customer_name or "Walk-in",
-                total_amount,
-                payload.notes,
-            ),
-        )
+        order_number = payload.order_number
+        for attempt in range(3):
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO orders (order_number, customer_name, status, total_amount, notes, created_by)
+                    VALUES (%s, %s, 'Pending', %s, %s, %s)
+                    """,
+                    (
+                        order_number,
+                        payload.customer_name or "Walk-in",
+                        total_amount,
+                        payload.notes,
+                        created_by,
+                    ),
+                )
+                break
+            except Error as exc:
+                if attempt == 2 or not _is_duplicate_key_error(exc):
+                    raise
+                order_number = generate_order_number()
         order_id = cursor.lastrowid
 
         for order_item, inventory_item in inventory_rows:
+            cursor.execute(
+                """
+                UPDATE inventory
+                SET quantity = quantity - %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s AND quantity >= %s
+                """,
+                (order_item.quantity, order_item.item_id, order_item.quantity),
+            )
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    "SELECT item_name, quantity FROM inventory WHERE id = %s",
+                    (order_item.item_id,),
+                )
+                current = cursor.fetchone() or {}
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Only {current.get('quantity', 0)} units available for "
+                        f"{current.get('item_name') or f'item {order_item.item_id}'}"
+                    ),
+                )
             cursor.execute(
                 """
                 INSERT INTO order_items (order_id, item_id, quantity, unit_price)
@@ -227,17 +267,9 @@ def create_order(payload: OrderCreate):
                     inventory_item["unit_price"],
                 ),
             )
-            cursor.execute(
-                """
-                UPDATE inventory
-                SET quantity = quantity - %s, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                """,
-                (order_item.quantity, order_item.item_id),
-            )
 
         connection.commit()
-        return {"message": "Order created successfully", "id": order_id}
+        return {"message": "Order created successfully", "id": order_id, "order_number": order_number}
     except HTTPException:
         connection.rollback()
         raise

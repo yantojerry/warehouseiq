@@ -53,6 +53,10 @@ class SQLiteCursor:
     def lastrowid(self):
         return self._cursor.lastrowid
 
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
     def execute(self, query, params=None):
         query = _translate_query(query)
         self._cursor.execute(query, tuple(params or ()))
@@ -104,7 +108,12 @@ class SQLiteConnection:
 
 
 def _translate_query(query):
-    return (query or "").replace("%s", "?")
+    translated = (query or "").replace("INSERT " + "IGNORE", "INSERT " + "OR IGNORE").replace("%s", "?")
+    translated = translated.replace("AUTO_INCREMENT", "AUTOINCREMENT")
+    translated = translated.replace("id INT PRIMARY KEY AUTOINCREMENT", "id INTEGER PRIMARY KEY AUTOINCREMENT")
+    translated = translated.replace("NOW()", "CURRENT_TIMESTAMP")
+    translated = translated.replace("CURDATE()", "DATE('now')")
+    return translated
 
 
 def _table_columns(connection, table):
@@ -157,10 +166,10 @@ def seed_default_data():
         if cursor.fetchone()[0] == 0:
             cursor.execute(
                 """
-                INSERT INTO users (username, password, password_hash, display_name, role, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users (username, password_hash, display_name, role, status)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
+                ("admin", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
             )
 
         cursor.execute("SELECT COUNT(*) FROM inventory")
@@ -209,7 +218,6 @@ def _ensure_schema(connection):
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
-                password TEXT,
                 password_hash TEXT,
                 display_name TEXT,
                 role TEXT NOT NULL DEFAULT 'Cashier',
@@ -279,6 +287,7 @@ def _ensure_schema(connection):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 invoice_number TEXT NOT NULL UNIQUE,
                 order_id INTEGER,
+                customer_id INTEGER,
                 customer_name TEXT NOT NULL,
                 total_amount REAL NOT NULL,
                 amount_paid REAL DEFAULT 0.0,
@@ -289,7 +298,8 @@ def _ensure_schema(connection):
                 cancelled_at TEXT,
                 issued_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (order_id) REFERENCES orders(id)
+                FOREIGN KEY (order_id) REFERENCES orders(id),
+                FOREIGN KEY (customer_id) REFERENCES customers(id)
             )
             """
         )
@@ -448,11 +458,11 @@ def _ensure_schema(connection):
             """
         )
         _ensure_columns(connection)
+        _backfill_invoice_customer_ids(connection)
         _ensure_roles_and_permissions(connection)
         _apply_role_permission_migrations(connection)
         _ensure_super_admin_account(connection)
         _repair_payment_history_fk(connection)
-        _upgrade_legacy_passwords(connection)
         connection.commit()
     finally:
         cursor.close()
@@ -461,7 +471,6 @@ def _ensure_schema(connection):
 def _ensure_columns(connection):
     additions = {
         "users": {
-            "password": "TEXT",
             "password_hash": "TEXT",
             "display_name": "TEXT",
             "role": "TEXT NOT NULL DEFAULT 'Cashier'",
@@ -484,6 +493,7 @@ def _ensure_columns(connection):
             "updated_at": "TEXT",
         },
         "invoices": {
+            "customer_id": "INTEGER",
             "payment_method": "TEXT",
             "status": "TEXT NOT NULL DEFAULT 'Pending'",
             "cancel_reason": "TEXT",
@@ -510,23 +520,30 @@ def _ensure_columns(connection):
             _add_column(connection, table, column, definition)
 
 
-def _upgrade_legacy_passwords(connection):
-    cursor = connection.cursor(dictionary=True)
+def _backfill_invoice_customer_ids(connection):
+    cursor = connection.cursor()
     try:
-        cursor.execute("SELECT id, password, password_hash, display_name, username FROM users")
-        rows = cursor.fetchall()
-        for row in rows:
-            updates = []
-            params = []
-            if not row.get("password_hash") and row.get("password"):
-                updates.append("password_hash = ?")
-                params.append(hash_password(row["password"]))
-            if not row.get("display_name"):
-                updates.append("display_name = ?")
-                params.append(str(row.get("username") or "User").replace("_", " ").title())
-            if updates:
-                params.append(row["id"])
-                cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
+        cursor.execute(
+            """
+            UPDATE invoices i
+            JOIN customers c ON c.full_name = i.customer_name
+            SET i.customer_id = c.id
+            WHERE i.customer_id IS NULL
+            """
+        )
+    except sqlite3.Error:
+        cursor.execute(
+            """
+            UPDATE invoices
+            SET customer_id = (
+                SELECT c.id
+                FROM customers c
+                WHERE c.full_name = invoices.customer_name
+                LIMIT 1
+            )
+            WHERE customer_id IS NULL
+            """
+        )
     finally:
         cursor.close()
 
@@ -537,7 +554,7 @@ def _ensure_roles_and_permissions(connection):
         for role in SYSTEM_ROLES:
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO roles (name, description, is_system)
+                INSERT IGNORE INTO roles (name, description, is_system)
                 VALUES (?, ?, 1)
                 """,
                 (role, f"{role} system role"),
@@ -552,7 +569,7 @@ def _ensure_roles_and_permissions(connection):
         for permission in PERMISSIONS:
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO permissions (
+                INSERT IGNORE INTO permissions (
                     permission_key, label, category, module_key,
                     description, is_system, sort_order
                 )
@@ -583,7 +600,7 @@ def _ensure_roles_and_permissions(connection):
                 if role_id and permission_id:
                     cursor.execute(
                         """
-                        INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+                        INSERT IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
                         VALUES (?, ?, 1)
                         """,
                         (role_id, permission_id),
@@ -597,7 +614,7 @@ def _set_role_permissions(cursor, role_id, permission_ids, enabled_keys):
         is_enabled = 1 if permission_key in enabled_keys else 0
         cursor.execute(
             """
-            INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+            INSERT IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
             VALUES (?, ?, ?)
             """,
             (role_id, permission_id, is_enabled),
@@ -678,7 +695,7 @@ def _apply_role_permission_migrations(connection):
         if admin and permission:
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+                INSERT IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
                 VALUES (?, ?, 1)
                 """,
                 (admin["id"], permission["id"]),
@@ -710,7 +727,7 @@ def _ensure_super_admin_account(connection):
         if cursor.fetchone():
             return
 
-        cursor.execute("SELECT id, password, password_hash FROM users WHERE LOWER(username) = 'admin' LIMIT 1")
+        cursor.execute("SELECT id, password_hash FROM users WHERE LOWER(username) = 'admin' LIMIT 1")
         existing_admin = cursor.fetchone()
         if existing_admin:
             cursor.execute(
@@ -721,19 +738,14 @@ def _ensure_super_admin_account(connection):
                 """,
                 (ROLE_SUPER_ADMIN, existing_admin["id"]),
             )
-            if not existing_admin.get("password_hash") and existing_admin.get("password"):
-                cursor.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
-                    (hash_password(existing_admin["password"]), existing_admin["id"]),
-                )
             return
 
         cursor.execute(
             """
-            INSERT INTO users (username, password, password_hash, display_name, role, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, display_name, role, status)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
+            ("admin", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
         )
     finally:
         cursor.close()

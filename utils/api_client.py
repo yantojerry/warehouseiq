@@ -13,9 +13,10 @@ _CURRENT_USER = None
 
 
 class ApiError(Exception):
-    def __init__(self, message, status_code=None):
+    def __init__(self, message, status_code=None, detail=None):
         super().__init__(message)
         self.status_code = status_code
+        self.detail = detail
 
 
 def _build_url(path, params=None):
@@ -55,10 +56,15 @@ def _request(method, path, data=None, params=None, expect_json=True):
     except urllib.error.HTTPError as exc:
         try:
             payload = json.loads(exc.read().decode("utf-8"))
-            message = payload.get("detail") or payload.get("message") or str(exc)
+            detail = payload.get("detail")
+            if isinstance(detail, dict):
+                message = detail.get("message") or payload.get("message") or str(exc)
+            else:
+                message = detail or payload.get("message") or str(exc)
         except Exception:
             message = str(exc)
-        raise ApiError(message, status_code=exc.code) from exc
+            detail = None
+        raise ApiError(message, status_code=exc.code, detail=detail) from exc
     except urllib.error.URLError as exc:
         raise ApiError(f"Could not reach the backend API: {exc.reason}") from exc
 
@@ -279,8 +285,17 @@ def get_payment(payment_id):
     return _request("GET", f"/payments/{payment_id}")
 
 
-def record_payment(payment_id, amount_paid, note=None):
-    return _request("POST", f"/payments/{payment_id}/record", {"amount_paid": amount_paid, "note": note})
+def record_payment(payment_id, amount_paid, note=None, payment_method=None, recorded_by=None):
+    return _request(
+        "POST",
+        f"/payments/{payment_id}/record",
+        {
+            "amount_paid": amount_paid,
+            "note": note,
+            "payment_method": payment_method,
+            "recorded_by": recorded_by,
+        },
+    )
 
 
 def get_payment_history(payment_id):

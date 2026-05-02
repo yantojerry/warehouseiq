@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS inventory (
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTO_INCREMENT,
     username VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(255),
     password_hash VARCHAR(255),
     display_name VARCHAR(120),
     role VARCHAR(50) NOT NULL DEFAULT 'Cashier',
@@ -127,12 +126,14 @@ CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY AUTO_INCREMENT,
     invoice_number VARCHAR(50) NOT NULL UNIQUE,
     order_id INTEGER,
+    customer_id INTEGER,
     customer_name VARCHAR(255) NOT NULL,
     total_amount DOUBLE NOT NULL,
     amount_paid DOUBLE DEFAULT 0.0,
     payment_method VARCHAR(50) DEFAULT NULL,
     issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (order_id) REFERENCES orders(id)
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TRIGGER IF EXISTS payments_before_insert;

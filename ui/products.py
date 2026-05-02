@@ -200,7 +200,7 @@ class ProductsPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.table.setColumnWidth(0, 64)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
-        self.table.setColumnWidth(4, 140)
+        self.table.setColumnWidth(4, 160)
         configure_table(self.table)
         self.table.setMinimumHeight(430)
         main_layout.addWidget(self.table)
@@ -323,7 +323,7 @@ class ProductsPage(QWidget):
         item_id = row["id"]
         card = QFrame()
         card.setObjectName("product_card")
-        card.setFixedWidth(200)
+        card.setFixedSize(200, 252)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
@@ -333,6 +333,8 @@ class ProductsPage(QWidget):
         name = QLabel(row["item_name"])
         name.setObjectName("card_title")
         name.setWordWrap(True)
+        name.setMinimumHeight(34)
+        name.setMaximumHeight(42)
         layout.addWidget(name)
 
         category = QLabel(row.get("category") or "Other")
@@ -342,25 +344,29 @@ class ProductsPage(QWidget):
         price = QLabel(format_currency(row.get("unit_price") or 0))
         price.setStyleSheet(f"color: {COLORS['text']}; font-weight: 700; font-size: 13px; background: transparent;")
         layout.addWidget(price)
+        layout.addStretch()
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(4)
+        btn_row.setSpacing(8)
         if self._can("products.edit"):
             btn_edit = QPushButton("Edit")
-            btn_edit.setFixedHeight(28)
+            btn_edit.setFixedSize(82, 30)
             set_button_kind(btn_edit, "outline")
             btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
-            btn_row.addWidget(btn_edit)
+            btn_row.addWidget(btn_edit, 1)
 
         if self._can("products.delete"):
             btn_del = QPushButton("Delete")
-            btn_del.setFixedHeight(28)
+            btn_del.setFixedSize(82, 30)
             set_button_kind(btn_del, "danger")
             btn_del.clicked.connect(lambda _, rid=item_id, name=row["item_name"]: self._confirm_delete(rid, name))
-            btn_row.addWidget(btn_del)
+            btn_row.addWidget(btn_del, 1)
 
         if btn_row.count() == 0:
-            btn_row.addWidget(QLabel("-"))
+            empty = QLabel("-")
+            empty.setAlignment(Qt.AlignCenter)
+            btn_row.addWidget(empty)
+        btn_row.setAlignment(Qt.AlignCenter)
         layout.addLayout(btn_row)
         return card
 
@@ -380,6 +386,9 @@ class ProductsPage(QWidget):
                 pix.loadFromData(base64.b64decode(img_data))
                 label.setPixmap(pix.scaled(pix_width, pix_height, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                 label.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+                label.setCursor(Qt.PointingHandCursor)
+                label.setToolTip("Click to view image")
+                label.mousePressEvent = lambda event, data=row: self.open_image_preview(data)
             except Exception:
                 label.setText("No image")
         else:
@@ -391,25 +400,32 @@ class ProductsPage(QWidget):
         widget.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(4, 2, 4, 2)
-        layout.setSpacing(4)
+        layout.setSpacing(8)
 
         if self._can("products.edit"):
             btn_edit = QPushButton("Edit")
-            btn_edit.setFixedSize(54, 28)
+            btn_edit.setFixedSize(64, 30)
             set_button_kind(btn_edit, "outline")
             btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
             layout.addWidget(btn_edit)
 
         if self._can("products.delete"):
             btn_del = QPushButton("Delete")
-            btn_del.setFixedSize(70, 28)
+            btn_del.setFixedSize(76, 30)
             set_button_kind(btn_del, "danger")
             btn_del.clicked.connect(lambda _, rid=item_id, item_name=name: self._confirm_delete(rid, item_name))
             layout.addWidget(btn_del)
 
         if layout.count() == 0:
-            layout.addWidget(QLabel("-"))
+            empty = QLabel("-")
+            empty.setAlignment(Qt.AlignCenter)
+            layout.addWidget(empty)
+        layout.setAlignment(Qt.AlignCenter)
         return widget
+
+    def open_image_preview(self, row):
+        dialog = ProductImageDialog(self, row)
+        dialog.exec_()
 
     def _confirm_delete(self, item_id, name):
         item_label = f'"{name}"' if name else "this product"
@@ -429,6 +445,59 @@ class ProductsPage(QWidget):
         dialog = ProductDialog(self, item_id=item_id)
         if dialog.exec_():
             self._reload_all()
+
+
+class ProductImageDialog(QDialog):
+    def __init__(self, parent, row):
+        super().__init__(parent)
+        self.row = row
+        self.setWindowTitle(row.get("item_name") or "Product Image")
+        self.setMinimumSize(560, 460)
+        self.setAttribute(Qt.WA_StyledBackground)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+
+        title = QLabel(self.row.get("item_name") or "Product Image")
+        title.setObjectName("login_title")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        meta = QLabel(self.row.get("category") or "Product Catalog")
+        meta.setObjectName("login_subtitle")
+        layout.addWidget(meta)
+
+        image_card = QFrame()
+        image_card.setObjectName("card")
+        image_layout = QVBoxLayout(image_card)
+        image_layout.setContentsMargins(14, 14, 14, 14)
+
+        image_label = QLabel("No image")
+        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setMinimumSize(500, 320)
+        image_label.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px; color:{COLORS['muted']};")
+        img_data = self.row.get("image_data")
+        if img_data:
+            try:
+                pix = QPixmap()
+                pix.loadFromData(base64.b64decode(img_data))
+                image_label.setPixmap(pix.scaled(500, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                image_label.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+            except Exception:
+                pass
+        image_layout.addWidget(image_label)
+        layout.addWidget(image_card, 1)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+        close = QPushButton("Close")
+        set_button_kind(close, "outline")
+        close.clicked.connect(self.accept)
+        btns.addWidget(close)
+        layout.addLayout(btns)
 
 
 class ProductDialog(QDialog):

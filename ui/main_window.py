@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
             item.get("key") if isinstance(item, dict) else str(item)
             for item in self.permissions
         }
-        self.setWindowTitle("MIHS General Merchandise Management System")
+        self.setWindowTitle("WarehouseIQ Warehouse Management System")
         self.setMinimumSize(1200, 720)
 
         self._nav_buttons = {}
@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         row.setContentsMargins(16, 0, 12, 0)
         row.setSpacing(8)
 
-        self.brand_logo = QLabel("M")
+        self.brand_logo = QLabel("W")
         self.brand_logo.setObjectName("brand_logo")
         self.brand_logo.setFixedSize(32, 32)
         self.brand_logo.setAlignment(Qt.AlignCenter)
@@ -97,9 +97,9 @@ class MainWindow(QMainWindow):
         col = QVBoxLayout(self.brand_text)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(0)
-        label = QLabel("MIHS General")
+        label = QLabel("WarehouseIQ")
         label.setObjectName("brand_label")
-        accent = QLabel("Merchandise")
+        accent = QLabel("Management")
         accent.setObjectName("brand_accent")
         col.addWidget(label)
         col.addWidget(accent)

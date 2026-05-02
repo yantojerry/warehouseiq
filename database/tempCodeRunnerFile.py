@@ -1,6 +1,0 @@
-DB_HOST = os.getenv("WAREHOUSEIQ_DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("WAREHOUSEIQ_DB_PORT", "3307"))
-DB_USER = os.getenv("WAREHOUSEIQ_DB_USER", "root")
-DB_PASSWORD = os.getenv("WAREHOUSEIQ_DB_PASSWORD", "")
-DB_NAME = os.getenv("WAREHOUSEIQ_DB_NAME", "warehouseiq")
-DB_TIMEOUT = int(os.getenv("WAREHOUSEIQ_DB_TIMEOUT", "2"))

@@ -100,12 +100,11 @@ def create_user(payload: UserCreate, request: Request):
             raise HTTPException(status_code=409, detail="Username already exists")
         cursor.execute(
             """
-            INSERT INTO users (username, password, password_hash, display_name, role, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, display_name, role, status)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 payload.username,
-                payload.password,
                 hash_password(payload.password),
                 payload.display_name or payload.username,
                 role,
@@ -193,10 +192,10 @@ def reset_password(user_id: int, payload: PasswordReset, request: Request):
         cursor.execute(
             """
             UPDATE users
-            SET password = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
+            SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (payload.password, hash_password(payload.password), user_id),
+            (hash_password(payload.password), user_id),
         )
         if cursor._cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="User not found")

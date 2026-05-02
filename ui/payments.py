@@ -20,6 +20,7 @@ from ui.components import error_dialog, info_dialog, warning_dialog
 from utils.api_client import (
     ApiError,
     create_payment,
+    current_user,
     get_payment,
     get_payment_history,
     get_payments_summary,
@@ -131,7 +132,7 @@ class PaymentsPage(QWidget):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
-        self.table.setColumnWidth(7, 176)
+        self.table.setColumnWidth(7, 194)
         configure_table(self.table)
         self.table.setMinimumHeight(450)
         card_layout.addWidget(self.table)
@@ -178,7 +179,7 @@ class PaymentsPage(QWidget):
 
             self.table.setCellWidget(row_index, 5, make_badge(payment_status, tone_for_status(payment_status)))
             self.table.setCellWidget(row_index, 7, self._make_action_buttons(pay_id, payment_status))
-            self.table.setRowHeight(row_index, 46)
+            self.table.setRowHeight(row_index, 50)
 
     def _update_summary(self, total, paid, partial_count):
         self._clear_layout(self.summary_row)
@@ -210,12 +211,14 @@ class PaymentsPage(QWidget):
         widget = QWidget()
         widget.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+        layout.addStretch()
 
         if self._can("payments.manage"):
             btn_pay = QPushButton("Add")
-            btn_pay.setFixedSize(70, 28)
+            btn_pay.setFixedSize(72, 30)
+            btn_pay.setCursor(Qt.PointingHandCursor)
             set_button_kind(btn_pay, "teal")
             btn_pay.setEnabled(payment_status != "Paid")
             btn_pay.clicked.connect(lambda checked=False, pid=payment_id: self.add_payment(pid))
@@ -223,13 +226,17 @@ class PaymentsPage(QWidget):
 
         if self._can("payments.view"):
             btn_hist = QPushButton("History")
-            btn_hist.setFixedSize(82, 28)
+            btn_hist.setFixedSize(88, 30)
+            btn_hist.setCursor(Qt.PointingHandCursor)
             set_button_kind(btn_hist, "outline")
             btn_hist.clicked.connect(lambda checked=False, pid=payment_id: self.view_history(pid))
             layout.addWidget(btn_hist)
 
         if layout.count() == 0:
-            layout.addWidget(QLabel("-"))
+            empty = QLabel("-")
+            empty.setAlignment(Qt.AlignCenter)
+            layout.addWidget(empty)
+        layout.addStretch()
         return widget
 
     def open_add_payment(self):
@@ -372,7 +379,10 @@ class RecordPaymentDialog(QDialog):
         self.amount_input.setPrefix("PHP ")
         self.note_input = QLineEdit()
         self.note_input.setPlaceholderText("Optional note")
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["Cash", "GCash", "Maya", "Bank Transfer"])
         form.addRow("Payment Amount *:", self.amount_input)
+        form.addRow("Payment Method *:", self.method_combo)
         form.addRow("Note:", self.note_input)
         layout.addLayout(form)
 
@@ -390,7 +400,13 @@ class RecordPaymentDialog(QDialog):
     def _save(self):
         amount = self.amount_input.value()
         try:
-            record_payment(self.payment_id, amount, self.note_input.text().strip() or None)
+            record_payment(
+                self.payment_id,
+                amount,
+                self.note_input.text().strip() or None,
+                payment_method=self.method_combo.currentText(),
+                recorded_by=current_user().get("username"),
+            )
             info_dialog(self, "Recorded", f"Payment of {format_currency(amount)} recorded.")
             self.accept()
         except ApiError as exc:

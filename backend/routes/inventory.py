@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlite3 import Error
 
+from backend.security import current_user_from_request
 from database.connection import fetch_inventory_item, get_connection
 
 
@@ -297,7 +298,7 @@ def update_inventory_item(
 
 
 @router.delete("/inventory/{item_id}")
-def delete_inventory_item(item_id: int):
+def delete_inventory_item(item_id: int, request: Request):
     if not fetch_inventory_item(item_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -307,6 +308,7 @@ def delete_inventory_item(item_id: int):
     connection = get_connection()
     cursor = connection.cursor()
     try:
+        actor = current_user_from_request(request).get("username")
         cursor.execute(
             """
             UPDATE inventory
@@ -320,7 +322,7 @@ def delete_inventory_item(item_id: int):
             INSERT INTO audit_log (actor, action, entity_type, entity_id, reason)
             VALUES (%s, 'deactivate', 'inventory', %s, %s)
             """,
-            ("system", item_id, "Inventory item removed from active catalog"),
+            (actor, item_id, "Inventory item removed from active catalog"),
         )
         connection.commit()
         return {"message": "Inventory item deleted successfully", "id": item_id}

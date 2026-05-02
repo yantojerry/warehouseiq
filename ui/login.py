@@ -22,7 +22,7 @@ SUPPORTED_ROLES = {"Super Admin", "Admin", "Warehouseman", "Bookkeeper", "Cashie
 class CreateAccountDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("MIHS - Create Account")
+        self.setWindowTitle("WarehouseIQ - Create Account")
         self.setFixedSize(460, 600)
         self.setAttribute(Qt.WA_StyledBackground)
         self._build_ui()
@@ -105,7 +105,7 @@ class CreateAccountDialog(QDialog):
 class ForgotPasswordDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("MIHS - Reset Password")
+        self.setWindowTitle("WarehouseIQ - Reset Password")
         self.setFixedSize(420, 220)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -128,7 +128,7 @@ class LoginPage(QDialog):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MIHS - Login")
+        self.setWindowTitle("WarehouseIQ - Login")
         self.setFixedSize(500, 600)
         self.setObjectName("login_page")
         self.setAttribute(Qt.WA_StyledBackground)
@@ -159,7 +159,7 @@ class LoginPage(QDialog):
         logo.setAlignment(Qt.AlignCenter)
         layout.addWidget(logo, alignment=Qt.AlignLeft)
 
-        title = QLabel("MIHS General Merchandise")
+        title = QLabel("WarehouseIQ")
         title.setObjectName("login_title")
         layout.addWidget(title)
         subtitle = QLabel("Sign in to warehouse operations.")

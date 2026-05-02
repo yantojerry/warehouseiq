@@ -16,6 +16,7 @@ router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
 
 class InvoiceCreate(BaseModel):
+    customer_id: Optional[int] = None
     customer_name: str = Field(..., min_length=1, max_length=255)
     total_amount: float = Field(..., gt=0)
     amount_paid: float = Field(default=0.0, ge=0)
@@ -81,17 +82,24 @@ def create_invoice(payload: InvoiceCreate):
     connection = get_connection()
     cursor = connection.cursor()
     try:
+        customer_id = payload.customer_id
+        if customer_id is None:
+            cursor.execute("SELECT id FROM customers WHERE full_name = ? LIMIT 1", (payload.customer_name,))
+            customer = cursor.fetchone()
+            if customer:
+                customer_id = customer[0] if not isinstance(customer, dict) else customer.get("id")
         cursor.execute(
             """
             INSERT INTO invoices (
-                invoice_number, order_id, customer_name, total_amount,
+                invoice_number, order_id, customer_id, customer_name, total_amount,
                 amount_paid, payment_method, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 invoice_number,
                 payload.order_id,
+                customer_id,
                 payload.customer_name,
                 payload.total_amount,
                 payload.amount_paid,
@@ -149,6 +157,8 @@ def cancel_invoice(invoice_id: int, payload: InvoiceCancel):
         invoice = cursor.fetchone()
         if not invoice:
             raise HTTPException(status_code=404, detail="Invoice not found")
+        if invoice.get("status") == "Cancelled":
+            raise HTTPException(status_code=400, detail="Invoice is already cancelled")
         cursor.execute(
             """
             UPDATE invoices

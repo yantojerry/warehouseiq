@@ -1,6 +1,7 @@
 import hashlib
 import re
 import secrets
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -71,15 +72,16 @@ def token_hash(token):
 
 def create_session(user_id):
     token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(hours=8)
     connection = get_connection()
     cursor = connection.cursor()
     try:
         cursor.execute(
             """
-            INSERT INTO user_sessions (user_id, token_hash)
-            VALUES (?, ?)
+            INSERT INTO user_sessions (user_id, token_hash, expires_at)
+            VALUES (?, ?, ?)
             """,
-            (user_id, token_hash(token)),
+            (user_id, token_hash(token), expires_at.strftime("%Y-%m-%d %H:%M:%S")),
         )
         connection.commit()
         return token

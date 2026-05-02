@@ -132,7 +132,7 @@ class InvoicesPage(QWidget):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
-        self.table.setColumnWidth(7, 150)
+        self.table.setColumnWidth(7, 172)
         configure_table(self.table)
         self.table.setMinimumHeight(470)
         card_layout.addWidget(self.table)
@@ -174,31 +174,37 @@ class InvoicesPage(QWidget):
                 make_badge(payment_method, "teal" if payment_method != "-" else "gray"),
             )
             self.table.setCellWidget(row_index, 7, self._make_action_buttons(inv_id))
-            self.table.setRowHeight(row_index, 46)
+            self.table.setRowHeight(row_index, 50)
 
     def _make_action_buttons(self, inv_id):
         widget = QWidget()
         widget.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+        layout.addStretch()
 
         if self._can("invoices.view"):
             btn_view = QPushButton("View")
-            btn_view.setFixedSize(58, 28)
+            btn_view.setFixedSize(68, 30)
+            btn_view.setCursor(Qt.PointingHandCursor)
             set_button_kind(btn_view, "teal")
             btn_view.clicked.connect(lambda checked=False, iid=inv_id: self.view_invoice(iid))
             layout.addWidget(btn_view)
 
         if self._can("invoices.print"):
             btn_print = QPushButton("Print")
-            btn_print.setFixedSize(68, 28)
+            btn_print.setFixedSize(72, 30)
+            btn_print.setCursor(Qt.PointingHandCursor)
             set_button_kind(btn_print, "outline")
             btn_print.clicked.connect(lambda checked=False, iid=inv_id: self.print_invoice(iid))
             layout.addWidget(btn_print)
 
         if layout.count() == 0:
-            layout.addWidget(QLabel("-"))
+            empty = QLabel("-")
+            empty.setAlignment(Qt.AlignCenter)
+            layout.addWidget(empty)
+        layout.addStretch()
         return widget
 
     def open_create_dialog(self):

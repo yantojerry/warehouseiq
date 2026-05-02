@@ -42,24 +42,15 @@ Open terminal/command prompt in the project folder:
 pip install -r requirements.txt
 ```
 
-### 3. Make sure XAMPP MariaDB is running
-This project uses MariaDB/MySQL through XAMPP.
+### 3. Configure Aiven MySQL
+This project uses Aiven MySQL through `mysql-connector-python`.
 
-Default connection settings:
-```text
-Host: 127.0.0.1
-Port: 3307
-User: root
-Password:
-Database: warehouseiq
-```
-
-You can override them with environment variables:
+Set these environment variables before starting the backend:
 ```powershell
-$env:WAREHOUSEIQ_DB_HOST="127.0.0.1"
-$env:WAREHOUSEIQ_DB_PORT="3307"
-$env:WAREHOUSEIQ_DB_USER="root"
-$env:WAREHOUSEIQ_DB_PASSWORD=""
+$env:WAREHOUSEIQ_DB_HOST="your-aiven-host.aivencloud.com"
+$env:WAREHOUSEIQ_DB_PORT="your-aiven-port"
+$env:WAREHOUSEIQ_DB_USER="avnadmin"
+$env:WAREHOUSEIQ_DB_PASSWORD="your-aiven-password"
 $env:WAREHOUSEIQ_DB_NAME="warehouseiq"
 ```
 
@@ -68,7 +59,7 @@ $env:WAREHOUSEIQ_DB_NAME="warehouseiq"
 python main.py
 ```
 
-The MariaDB database (`warehouseiq`) will be created automatically on first run if it does not exist.
+Create the Aiven MySQL database (`warehouseiq`) before first run, then the app will create or verify its tables during startup.
 
 ### Backend API
 This repo now also includes a FastAPI backend.
@@ -118,7 +109,7 @@ DELETE /inventory/{id}
 |---|---|
 | Python 3.10+ | Core language |
 | PyQt5 | Desktop UI framework |
-| MariaDB / MySQL | Local database via XAMPP |
+| Aiven MySQL | Cloud database, accessed through `mysql-connector-python` |
 | QPrinter | Invoice printing |
 
 ---
@@ -173,6 +164,6 @@ git push origin main
 ---
 
 ##  Notes for School Defense
-- All data is stored locally in XAMPP MariaDB (`warehouseiq`) — no internet needed
+- All operational data is stored in the configured Aiven MySQL database (`warehouseiq`)
 - The app auto-seeds 10 sample inventory items on first launch
 - The system is designed for a **hardware/construction supply store** with a 6-floor warehouse
