@@ -1,4 +1,6 @@
-from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, pyqtSignal
+import inspect
+
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,7 +16,7 @@ from PyQt5.QtWidgets import (
 
 from ui.components import ToastManager, error_dialog
 from ui.components.icons import icon
-from ui.modules import MODULE_BY_KEY, ROLE_START_PAGE, allowed_modules, can_access
+from ui.modules import MODULE_BY_KEY, allowed_modules, can_access, first_accessible_module
 from utils.styles import canonical_role, display_role, make_badge, repolish
 from utils.theme import COLORS
 
@@ -22,11 +24,16 @@ from utils.theme import COLORS
 class MainWindow(QMainWindow):
     logout_requested = pyqtSignal()
 
-    def __init__(self, username=None, role=None, display_name=None):
+    def __init__(self, username=None, role=None, display_name=None, permissions=None):
         super().__init__()
         self.username = username or "User"
         self.display_name = display_name or self.username
         self.role = canonical_role(role) or "Admin"
+        self.permissions = permissions or []
+        self.permission_keys = {
+            item.get("key") if isinstance(item, dict) else str(item)
+            for item in self.permissions
+        }
         self.setWindowTitle("MIHS General Merchandise Management System")
         self.setMinimumSize(1200, 720)
 
@@ -41,7 +48,7 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._build_ui()
-        self.navigate_to(ROLE_START_PAGE.get(self.role, "dashboard"))
+        self.navigate_to(first_accessible_module(self.role, self.permission_keys))
 
     def _build_ui(self):
         central = QWidget()
@@ -75,7 +82,7 @@ class MainWindow(QMainWindow):
     def _brand_header(self):
         frame = QFrame()
         frame.setObjectName("sidebar_brand")
-        frame.setFixedHeight(64)
+        frame.setFixedHeight(68)
         row = QHBoxLayout(frame)
         row.setContentsMargins(16, 0, 12, 0)
         row.setSpacing(8)
@@ -110,7 +117,7 @@ class MainWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("sidebar_profile")
         row = QHBoxLayout(frame)
-        row.setContentsMargins(16, 14, 16, 14)
+        row.setContentsMargins(16, 16, 16, 16)
         row.setSpacing(10)
 
         avatar = QLabel(self._initials(self.display_name))
@@ -125,7 +132,7 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(0, 0, 0, 0)
         name_lbl = QLabel(self.display_name)
         name_lbl.setObjectName("profile_name")
-        tone = {"Admin": "navy", "Sales Staff": "blue", "Warehouse Staff": "amber", "Bookkeeper": "teal"}.get(self.role, "gray")
+        tone = {"Super Admin": "red", "Admin": "navy", "Cashier": "blue", "Warehouseman": "amber", "Bookkeeper": "teal"}.get(self.role, "gray")
         col.addWidget(name_lbl)
         col.addWidget(make_badge(display_role(self.role), tone))
         row.addWidget(self.profile_text, 1)
@@ -151,7 +158,7 @@ class MainWindow(QMainWindow):
 
     def _populate_nav(self):
         last_group = None
-        for module in allowed_modules(self.role):
+        for module in allowed_modules(self.role, self.permission_keys):
             if module.group != last_group:
                 label = QLabel(module.group.upper())
                 label.setObjectName("nav_section_label")
@@ -160,6 +167,8 @@ class MainWindow(QMainWindow):
                 last_group = module.group
             btn = QToolButton()
             btn.setObjectName("nav_button")
+            btn.setMinimumHeight(36)
+            btn.setIconSize(QSize(16, 16))
             btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             btn.setIcon(icon(module.icon, COLORS["muted"]))
             btn.setText(module.label)
@@ -184,7 +193,7 @@ class MainWindow(QMainWindow):
         return line
 
     def navigate_to(self, module_key):
-        if not can_access(self.role, module_key):
+        if not can_access(self.role, module_key, self.permission_keys):
             module = MODULE_BY_KEY.get(module_key)
             label = module.label if module else module_key
             error_dialog(self, "Access Denied", f"Your role cannot access {label}.")
@@ -192,7 +201,7 @@ class MainWindow(QMainWindow):
 
         if module_key not in self._module_indexes:
             module = MODULE_BY_KEY[module_key]
-            page = module.page_class(username=self.display_name) if module.key == "dashboard" else module.page_class()
+            page = self._create_page(module)
             self._pages[module_key] = page
             self._module_indexes[module_key] = self._stack.addWidget(page)
 
@@ -200,6 +209,29 @@ class MainWindow(QMainWindow):
         self._current_key = module_key
         self._update_active_nav()
         return True
+
+    def _create_page(self, module):
+        kwargs = {}
+        try:
+            parameters = inspect.signature(module.page_class.__init__).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "username" in parameters:
+            kwargs["username"] = self.display_name
+        if "permissions" in parameters:
+            kwargs["permissions"] = self.permission_keys
+        if "current_role" in parameters:
+            kwargs["current_role"] = self.role
+        if "current_user" in parameters:
+            kwargs["current_user"] = self.username
+        if "display_name" in parameters:
+            kwargs["display_name"] = self.display_name
+        if "navigate_callback" in parameters:
+            kwargs["navigate_callback"] = self.navigate_to
+        page = module.page_class(**kwargs)
+        if hasattr(page, "set_permissions"):
+            page.set_permissions(self.permission_keys)
+        return page
 
     def _update_active_nav(self):
         for key, button in self._nav_buttons.items():

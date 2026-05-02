@@ -3,6 +3,7 @@ from datetime import date
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -12,7 +13,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from utils.api_client import ApiError, get_dashboard_overview, list_invoices, list_orders
+from utils.api_client import ApiError, get_dashboard_overview
 from utils.helpers import format_currency, format_date
 from utils.styles import (
     COLORS,
@@ -25,9 +26,11 @@ from utils.styles import (
 
 
 class DashboardPage(QWidget):
-    def __init__(self, username="User"):
+    def __init__(self, username="User", permissions=None, navigate_callback=None):
         super().__init__()
         self.username = username or "User"
+        self.permissions = set(permissions or ())
+        self.navigate_callback = navigate_callback
         self.setObjectName("content_area")
         self._build_ui()
         self.refresh()
@@ -54,7 +57,6 @@ class DashboardPage(QWidget):
         scroll.setWidget(content)
 
         header = QHBoxLayout()
-        header.setSpacing(12)
         title_block = QVBoxLayout()
         title_block.setSpacing(3)
         self.title = QLabel(f"Good morning, {self.username}")
@@ -75,22 +77,48 @@ class DashboardPage(QWidget):
         self.alerts_layout.setSpacing(8)
         self.layout.addLayout(self.alerts_layout)
 
-        self.stats_row = QHBoxLayout()
-        self.stats_row.setSpacing(14)
-        self.layout.addLayout(self.stats_row)
+        self.stats_grid = QGridLayout()
+        self.stats_grid.setSpacing(14)
+        self.layout.addLayout(self.stats_grid)
 
-        grid = QHBoxLayout()
-        grid.setSpacing(14)
-        self.transactions_card = self._make_table_card(
+        grid_one = QHBoxLayout()
+        grid_one.setSpacing(14)
+        self.transactions_card, self.transactions_table = self._make_table_card(
             "Recent Transactions",
             ["INVOICE #", "CUSTOMER", "TOTAL", "STATUS"],
         )
-        self.transactions_table = self.transactions_card.findChild(QTableWidget)
-        grid.addWidget(self.transactions_card, 1)
+        grid_one.addWidget(self.transactions_card, 1)
+        self.orders_card = self._make_progress_card("Pending Tasks")
+        grid_one.addWidget(self.orders_card, 1)
+        self.layout.addLayout(grid_one)
 
-        self.progress_card = self._make_progress_card()
-        grid.addWidget(self.progress_card, 1)
-        self.layout.addLayout(grid)
+        grid_two = QHBoxLayout()
+        grid_two.setSpacing(14)
+        self.restock_card, self.restock_table = self._make_table_card(
+            "Products Needing Restock",
+            ["ITEM", "FLOOR", "STOCK", "MIN."],
+        )
+        grid_two.addWidget(self.restock_card, 1)
+        self.top_card, self.top_table = self._make_table_card(
+            "Top Selling Products",
+            ["PRODUCT", "QTY SOLD", "SALES"],
+        )
+        grid_two.addWidget(self.top_card, 1)
+        self.layout.addLayout(grid_two)
+
+        grid_three = QHBoxLayout()
+        grid_three.setSpacing(14)
+        self.stock_updates_card, self.stock_updates_table = self._make_table_card(
+            "Recent Stock Updates",
+            ["ITEM", "FLOOR", "STOCK", "UPDATED"],
+        )
+        grid_three.addWidget(self.stock_updates_card, 1)
+        self.orders_table_card, self.orders_table = self._make_table_card(
+            "Recent Orders",
+            ["ORDER #", "CUSTOMER", "TOTAL", "STATUS"],
+        )
+        grid_three.addWidget(self.orders_table_card, 1)
+        self.layout.addLayout(grid_three)
         self.layout.addStretch()
 
     def _make_table_card(self, title, headers):
@@ -102,6 +130,7 @@ class DashboardPage(QWidget):
 
         header = QFrame()
         header.setObjectName("card_header")
+        header.setMinimumHeight(46)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(18, 13, 18, 13)
         title_label = QLabel(title)
@@ -115,11 +144,11 @@ class DashboardPage(QWidget):
         table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         configure_table(table)
-        table.setMinimumHeight(250)
+        table.setMinimumHeight(235)
         outer.addWidget(table)
-        return card
+        return card, table
 
-    def _make_progress_card(self):
+    def _make_progress_card(self, title):
         card = QFrame()
         card.setObjectName("card")
         outer = QVBoxLayout(card)
@@ -130,9 +159,9 @@ class DashboardPage(QWidget):
         header.setObjectName("card_header")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(18, 13, 18, 13)
-        title = QLabel("Orders in Progress")
-        title.setObjectName("card_title")
-        header_layout.addWidget(title)
+        label = QLabel(title)
+        label.setObjectName("card_title")
+        header_layout.addWidget(label)
         header_layout.addStretch()
         outer.addWidget(header)
 
@@ -145,60 +174,61 @@ class DashboardPage(QWidget):
         return card
 
     def refresh(self):
-        today = date.today()
-        self.subtitle.setText(today.strftime("%B %d, %Y") + "  |  Live")
+        self.subtitle.setText(date.today().strftime("%B %d, %Y") + "  |  Live")
 
         try:
             overview = get_dashboard_overview()
-            invoices = list_invoices()
-            orders = list_orders()
         except ApiError:
             return
 
-        stats = overview.get("stats", {})
-        today_invoices = [row for row in invoices if self._is_today(row.get("issued_at"))]
-        today_orders = [row for row in orders if self._is_today(row.get("created_at"))]
-        sales_today = sum(float(row.get("total_amount") or 0) for row in today_invoices)
+        self.permissions = set(overview.get("permissions") or self.permissions)
+        stats = overview.get("stats") or {}
+        widgets = overview.get("widgets") or {}
+        self._load_alerts(stats, widgets)
+        self._load_stats(stats, widgets)
+        self._load_transactions(overview.get("recent_transactions") or [])
+        self._load_progress(overview.get("recent_orders") or [])
+        self._load_restock(overview.get("products_needing_restock") or [])
+        self._load_top_products(overview.get("top_selling_products") or [])
+        self._load_stock_updates(overview.get("recent_stock_updates") or [])
+        self._load_recent_orders(overview.get("recent_orders") or [])
 
-        self._load_alerts(
-            low_stock_count=int(stats.get("low_stock") or 0),
-            pending_orders=[row for row in orders if row.get("status") == "Pending"],
-        )
-        self._load_stats(
-            sales_today=sales_today,
-            orders_today=len(today_orders),
-            low_stock=int(stats.get("low_stock") or 0),
-            outstanding=float(stats.get("outstanding_balance") or 0),
-        )
-        self._load_transactions(invoices[:8])
-        self._load_progress(orders)
+        self.transactions_card.setVisible(bool(widgets.get("sales")))
+        self.top_card.setVisible(bool(widgets.get("sales")))
+        self.restock_card.setVisible(bool(widgets.get("inventory")))
+        self.stock_updates_card.setVisible(bool(widgets.get("inventory")))
+        self.orders_card.setVisible(bool(widgets.get("orders") or widgets.get("inventory") or widgets.get("finance")))
+        self.orders_table_card.setVisible(bool(widgets.get("orders")))
 
-    @staticmethod
-    def _is_today(value):
-        if value is None:
-            return False
-        return str(value).startswith(date.today().isoformat())
-
-    def _load_alerts(self, low_stock_count, pending_orders):
+    def _load_alerts(self, stats, widgets):
         self._clear_layout(self.alerts_layout)
-        if low_stock_count:
+        low_stock = int(stats.get("low_stock_items") or 0)
+        out_of_stock = int(stats.get("out_of_stock_items") or 0)
+        pending_orders = int(stats.get("pending_orders") or 0)
+        partial_payments = int(stats.get("partial_payments") or 0)
+        if widgets.get("inventory") and (low_stock or out_of_stock):
             self.alerts_layout.addWidget(
-                self._make_alert(
-                    "red",
-                    f"{low_stock_count} low stock item(s) need attention.",
-                )
+                self._make_alert("red", f"{low_stock} low stock and {out_of_stock} out of stock item(s) need attention.", "inventory")
             )
-        if pending_orders:
+        if widgets.get("orders") and pending_orders:
             self.alerts_layout.addWidget(
                 self._make_alert(
                     "amber",
-                    f"{len(pending_orders)} order(s) awaiting warehouse dispatch.",
+                    f"{pending_orders} order(s) are waiting for action.",
+                    self._first_allowed(("orders", "orders.view"), ("dispatch", "dispatch.view")),
                 )
             )
+        if widgets.get("finance") and partial_payments:
+            self.alerts_layout.addWidget(
+                self._make_alert("teal", f"{partial_payments} partial payment(s) still have balances.", "payments")
+            )
 
-    def _make_alert(self, tone, message):
+    def _make_alert(self, tone, message, target=None):
         frame = QFrame()
         frame.setObjectName(f"alert_{tone}")
+        if target and self.navigate_callback:
+            frame.setCursor(Qt.PointingHandCursor)
+            frame.mousePressEvent = lambda event, key=target: self.navigate_callback(key)
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(14, 11, 14, 11)
         label = QLabel(message)
@@ -207,23 +237,43 @@ class DashboardPage(QWidget):
         layout.addWidget(label)
         return frame
 
-    def _load_stats(self, sales_today, orders_today, low_stock, outstanding):
-        self._clear_layout(self.stats_row)
-        cards = [
-            ("Total Sales Today", format_currency(sales_today), "navy"),
-            ("Orders Today", str(orders_today), "teal"),
-            ("Low Stock Alerts", str(low_stock), "amber"),
-            ("Outstanding Balances", format_currency(outstanding), "red"),
-        ]
-        for label, value, tone in cards:
-            self.stats_row.addWidget(self._make_stat_card(label, value, tone))
+    def _load_stats(self, stats, widgets):
+        self._clear_layout(self.stats_grid)
+        cards = []
+        if widgets.get("inventory"):
+            cards.extend([
+                ("Total Products", stats.get("total_products") or 0, "navy", self._first_allowed(("products", "products.view"), ("inventory", "inventory.view"))),
+                ("Total Stock Quantity", stats.get("total_stock_quantity") or 0, "teal", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+                ("Low Stock Items", stats.get("low_stock_items") or 0, "amber", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+                ("Out of Stock Items", stats.get("out_of_stock_items") or 0, "red", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+            ])
+        if widgets.get("sales"):
+            cards.extend([
+                ("Total Sales", format_currency(stats.get("total_sales") or 0), "navy", self._first_allowed(("reports", "reports.view"), ("invoices", "invoices.view"), ("pos", "pos.create_sale"))),
+                ("Sales Today", format_currency(stats.get("sales_today") or 0), "teal", self._first_allowed(("invoices", "invoices.view"), ("pos", "pos.create_sale"))),
+            ])
+        if widgets.get("orders"):
+            cards.append(("Pending Tasks", stats.get("pending_tasks") or 0, "amber", self._first_allowed(("dispatch", "dispatch.view"), ("orders", "orders.view"))))
+        if widgets.get("finance"):
+            cards.append(("Outstanding Balances", format_currency(stats.get("outstanding_balance") or 0), "red", self._first_allowed(("payments", "payments.view"), ("balance", "balance.view"))))
+        if widgets.get("users"):
+            cards.append(("Total Users", stats.get("total_users") or 0, "gray", "users"))
 
-    def _make_stat_card(self, label, value, tone):
+        if not cards:
+            cards.append(("Settings Available", "Yes", "teal", "settings"))
+
+        for index, (label, value, tone, target) in enumerate(cards):
+            self.stats_grid.addWidget(self._make_stat_card(label, value, tone, target), index // 4, index % 4)
+
+    def _make_stat_card(self, label, value, tone, target=None):
         card = QFrame()
         card.setObjectName(f"stat_card_{tone}")
+        if target and self.navigate_callback:
+            card.setCursor(Qt.PointingHandCursor)
+            card.mousePressEvent = lambda event, key=target: self.navigate_callback(key)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(6)
         value_label = QLabel(str(value))
         value_label.setObjectName("stat_value")
         label_widget = QLabel(label)
@@ -231,6 +281,12 @@ class DashboardPage(QWidget):
         layout.addWidget(value_label)
         layout.addWidget(label_widget)
         return card
+
+    def _first_allowed(self, *options):
+        for module_key, permission_key in options:
+            if permission_key in self.permissions:
+                return module_key
+        return None
 
     def _load_transactions(self, rows):
         self.transactions_table.setRowCount(len(rows))
@@ -242,7 +298,7 @@ class DashboardPage(QWidget):
             elif paid > 0:
                 status = "Partial"
             else:
-                status = "Unpaid"
+                status = row.get("status") or "Unpaid"
 
             values = [
                 row.get("invoice_number") or "-",
@@ -252,27 +308,15 @@ class DashboardPage(QWidget):
             for col, value in enumerate(values):
                 mono = col in {0, 2}
                 color = COLORS["navy"] if col == 0 else None
-                self.transactions_table.setItem(
-                    row_index,
-                    col,
-                    table_item(value, mono=mono, bold=mono, color=color),
-                )
-            self.transactions_table.setCellWidget(
-                row_index,
-                3,
-                make_badge(status, tone_for_status(status)),
-            )
+                self.transactions_table.setItem(row_index, col, table_item(value, mono=mono, bold=mono, color=color))
+            self.transactions_table.setCellWidget(row_index, 3, make_badge(status, tone_for_status(status)))
             self.transactions_table.setRowHeight(row_index, 38)
 
     def _load_progress(self, orders):
         self._clear_layout(self.progress_layout)
-        active_orders = [
-            row for row in orders
-            if row.get("status") not in {"Completed", "Cancelled"}
-        ][:4]
-
+        active_orders = [row for row in orders if row.get("status") not in {"Completed", "Cancelled"}][:4]
         if not active_orders:
-            empty = QLabel("No active orders.")
+            empty = QLabel("No pending tasks.")
             empty.setObjectName("stat_label")
             self.progress_layout.addWidget(empty)
             self.progress_layout.addStretch()
@@ -285,6 +329,11 @@ class DashboardPage(QWidget):
     def _make_progress_item(self, order):
         frame = QFrame()
         frame.setObjectName("card_body")
+        frame.setContentsMargins(12, 10, 12, 10)
+        target = self._first_allowed(("orders", "orders.view"), ("dispatch", "dispatch.view"))
+        if target and self.navigate_callback:
+            frame.setCursor(Qt.PointingHandCursor)
+            frame.mousePressEvent = lambda event, key=target: self.navigate_callback(key)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -324,6 +373,58 @@ class DashboardPage(QWidget):
             row.addWidget(make_badge(step, tone))
         row.addStretch()
         return row
+
+    def _load_restock(self, rows):
+        self.restock_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = [
+                row.get("item_name") or row.get("item_code") or "-",
+                f"F{row.get('floor') or '-'}",
+                str(row.get("quantity") or 0),
+                str(row.get("low_stock_threshold") or 0),
+            ]
+            for col, value in enumerate(values):
+                self.restock_table.setItem(row_index, col, table_item(value, mono=col > 0, bold=col in {0, 2}))
+            self.restock_table.setRowHeight(row_index, 38)
+
+    def _load_top_products(self, rows):
+        self.top_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = [
+                row.get("item_name") or "-",
+                str(row.get("quantity_sold") or 0),
+                format_currency(row.get("gross_sales") or 0),
+            ]
+            for col, value in enumerate(values):
+                self.top_table.setItem(row_index, col, table_item(value, mono=col > 0, bold=col > 0))
+            self.top_table.setRowHeight(row_index, 38)
+
+    def _load_stock_updates(self, rows):
+        self.stock_updates_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = [
+                row.get("item_name") or row.get("item_code") or "-",
+                f"F{row.get('floor') or '-'}",
+                str(row.get("quantity") or 0),
+                format_date(row.get("updated_at")),
+            ]
+            for col, value in enumerate(values):
+                self.stock_updates_table.setItem(row_index, col, table_item(value, mono=col in {1, 2, 3}, bold=col in {0, 2}))
+            self.stock_updates_table.setRowHeight(row_index, 38)
+
+    def _load_recent_orders(self, rows):
+        self.orders_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            display_status = display_order_status(row.get("status"))
+            values = [
+                row.get("order_number") or "-",
+                row.get("customer_name") or "Walk-in",
+                format_currency(row.get("total_amount") or 0),
+            ]
+            for col, value in enumerate(values):
+                self.orders_table.setItem(row_index, col, table_item(value, mono=col in {0, 2}, bold=col in {0, 2}))
+            self.orders_table.setCellWidget(row_index, 3, make_badge(display_status, tone_for_status(display_status)))
+            self.orders_table.setRowHeight(row_index, 38)
 
     @staticmethod
     def _clear_layout(layout):

@@ -164,6 +164,7 @@ class PosPage(QWidget):
         def tot_row(label):
             lbl = QLabel(label)
             lbl.setObjectName("stat_label")
+            lbl.setStyleSheet("color: #ffffff; background: transparent;")
             val = QLabel("₱ 0.00")
             val.setObjectName("pos_total_value")
             val.setAlignment(Qt.AlignRight)
@@ -185,6 +186,7 @@ class PosPage(QWidget):
         live_row = QHBoxLayout()
         live_lbl = QLabel("Live Total")
         live_lbl.setObjectName("card_title")
+        live_lbl.setStyleSheet("color: #ffffff; background: transparent;")
         self.lbl_live = QLabel("₱ 0.00")
         self.lbl_live.setObjectName("pos_live_total")
         self.lbl_live.setAlignment(Qt.AlignRight)
@@ -214,8 +216,10 @@ class PosPage(QWidget):
         def s_row(label):
             lbl = QLabel(label)
             lbl.setObjectName("stat_label")
+            lbl.setStyleSheet("color: #ffffff; background: transparent;")
             val = QLabel("₱ 0.00")
             val.setObjectName("card_title")
+            val.setStyleSheet("color: #ffffff; background: transparent;")
             val.setAlignment(Qt.AlignRight)
             return lbl, val
 
@@ -234,6 +238,7 @@ class PosPage(QWidget):
 
         pay_title = QLabel("Payment Method")
         pay_title.setObjectName("card_title")
+        pay_title.setStyleSheet("color: #ffffff; background: transparent;")
         layout.addWidget(pay_title)
 
         for method in PAYMENT_METHODS:
@@ -250,6 +255,7 @@ class PosPage(QWidget):
 
         tender_lbl = QLabel("Amount Tendered")
         tender_lbl.setObjectName("stat_label")
+        tender_lbl.setStyleSheet("color: #ffffff; background: transparent;")
         layout.addWidget(tender_lbl)
 
         self.tender_input = QLineEdit()

@@ -43,8 +43,9 @@ from utils.styles import (
 
 
 class DispatchPage(QWidget):
-    def __init__(self):
+    def __init__(self, permissions=None):
         super().__init__()
+        self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self.inventory = []
         self._build_ui()
@@ -54,6 +55,9 @@ class DispatchPage(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(10000)
+
+    def _can(self, permission):
+        return permission in self.permissions
 
     def _connect_dispatch_socket(self):
         self.socket = QWebSocket()
@@ -187,6 +191,8 @@ class DispatchPage(QWidget):
         return card
 
     def refresh(self):
+        if not self._can("dispatch.view"):
+            return
         try:
             self.inventory = list_inventory()
             orders = get_dispatch_queue()
@@ -283,18 +289,19 @@ class DispatchPage(QWidget):
 
         layout.addLayout(self._floor_grid(items))
 
-        actions = QHBoxLayout()
-        send = QPushButton(self._dispatch_button_text(order.get("status")))
-        set_button_kind(send, "teal")
-        send.clicked.connect(lambda checked=False, oid=order["id"], status=order.get("status"): self.advance_order(oid, status))
-        actions.addWidget(send, 1)
-        note = QPushButton("Note")
-        set_button_kind(note, "outline")
-        note.clicked.connect(
-            lambda checked=False, oid=order["id"], text=current_note: self.open_note_dialog(oid, text)
-        )
-        actions.addWidget(note)
-        layout.addLayout(actions)
+        if self._can("dispatch.update"):
+            actions = QHBoxLayout()
+            send = QPushButton(self._dispatch_button_text(order.get("status")))
+            set_button_kind(send, "teal")
+            send.clicked.connect(lambda checked=False, oid=order["id"], status=order.get("status"): self.advance_order(oid, status))
+            actions.addWidget(send, 1)
+            note = QPushButton("Note")
+            set_button_kind(note, "outline")
+            note.clicked.connect(
+                lambda checked=False, oid=order["id"], text=current_note: self.open_note_dialog(oid, text)
+            )
+            actions.addWidget(note)
+            layout.addLayout(actions)
 
         outer.addWidget(body)
         return card
@@ -304,6 +311,9 @@ class DispatchPage(QWidget):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
+        if not self._can("dispatch.update"):
+            layout.addWidget(QLabel(item.get("pick_status") or "Pending"))
+            return widget
         choices = [
             ("Picked", "teal"),
             ("Partial", "outline"),

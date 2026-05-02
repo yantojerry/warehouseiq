@@ -58,14 +58,18 @@ PRODUCT_CATEGORIES = [
 
 
 class ProductsPage(QWidget):
-    def __init__(self):
+    def __init__(self, permissions=None):
         super().__init__()
+        self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self.selected_category = "All Categories"
         self._view_mode = "list"
         self._build_ui()
         self._refresh_category_options()
         self.load_products()
+
+    def _can(self, permission):
+        return permission in self.permissions
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -175,10 +179,11 @@ class ProductsPage(QWidget):
         btn_refresh.clicked.connect(self._reload_all)
         header_layout.addWidget(btn_refresh)
 
-        btn_add = QPushButton("+ Add Item")
-        set_button_kind(btn_add, "teal")
-        btn_add.clicked.connect(self.open_add_dialog)
-        header_layout.addWidget(btn_add)
+        if self._can("products.add"):
+            btn_add = QPushButton("+ Add Item")
+            set_button_kind(btn_add, "teal")
+            btn_add.clicked.connect(self.open_add_dialog)
+            header_layout.addWidget(btn_add)
 
         main_layout.addWidget(card_header)
 
@@ -340,18 +345,22 @@ class ProductsPage(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
-        btn_edit = QPushButton("Edit")
-        btn_edit.setFixedHeight(28)
-        set_button_kind(btn_edit, "outline")
-        btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
+        if self._can("products.edit"):
+            btn_edit = QPushButton("Edit")
+            btn_edit.setFixedHeight(28)
+            set_button_kind(btn_edit, "outline")
+            btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
+            btn_row.addWidget(btn_edit)
 
-        btn_del = QPushButton("Delete")
-        btn_del.setFixedHeight(28)
-        set_button_kind(btn_del, "danger")
-        btn_del.clicked.connect(lambda _, rid=item_id, name=row["item_name"]: self._confirm_delete(rid, name))
+        if self._can("products.delete"):
+            btn_del = QPushButton("Delete")
+            btn_del.setFixedHeight(28)
+            set_button_kind(btn_del, "danger")
+            btn_del.clicked.connect(lambda _, rid=item_id, name=row["item_name"]: self._confirm_delete(rid, name))
+            btn_row.addWidget(btn_del)
 
-        btn_row.addWidget(btn_edit)
-        btn_row.addWidget(btn_del)
+        if btn_row.count() == 0:
+            btn_row.addWidget(QLabel("-"))
         layout.addLayout(btn_row)
         return card
 
@@ -384,18 +393,22 @@ class ProductsPage(QWidget):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(4)
 
-        btn_edit = QPushButton("Edit")
-        btn_edit.setFixedSize(54, 28)
-        set_button_kind(btn_edit, "outline")
-        btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
+        if self._can("products.edit"):
+            btn_edit = QPushButton("Edit")
+            btn_edit.setFixedSize(54, 28)
+            set_button_kind(btn_edit, "outline")
+            btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
+            layout.addWidget(btn_edit)
 
-        btn_del = QPushButton("Delete")
-        btn_del.setFixedSize(70, 28)
-        set_button_kind(btn_del, "danger")
-        btn_del.clicked.connect(lambda _, rid=item_id, item_name=name: self._confirm_delete(rid, item_name))
+        if self._can("products.delete"):
+            btn_del = QPushButton("Delete")
+            btn_del.setFixedSize(70, 28)
+            set_button_kind(btn_del, "danger")
+            btn_del.clicked.connect(lambda _, rid=item_id, item_name=name: self._confirm_delete(rid, item_name))
+            layout.addWidget(btn_del)
 
-        layout.addWidget(btn_edit)
-        layout.addWidget(btn_del)
+        if layout.count() == 0:
+            layout.addWidget(QLabel("-"))
         return widget
 
     def _confirm_delete(self, item_id, name):

@@ -85,6 +85,7 @@ class BalanceSheetPage(QWidget):
         toolbar.addStretch()
 
         self.filter_combo = QComboBox()
+        self.filter_combo.setFixedHeight(36)
         self.filter_combo.addItems(["All", "Partial", "Unpaid", "Pending"])
         self.filter_combo.currentIndexChanged.connect(self.load_balance_sheet)
         toolbar.addWidget(self.filter_combo)
@@ -93,6 +94,7 @@ class BalanceSheetPage(QWidget):
         self.search_input.setPlaceholderText("Search customer...")
         self.search_input.textChanged.connect(self.load_balance_sheet)
         self.search_input.setFixedWidth(240)
+        self.search_input.setFixedHeight(36)
         toolbar.addWidget(self.search_input)
         card_layout.addWidget(card_header)
 

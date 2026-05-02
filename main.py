@@ -14,7 +14,9 @@ from backend.routes.orders import router as orders_router
 from backend.routes.payments import router as payments_router
 from backend.routes.pos import router as pos_router
 from backend.routes.reports import router as reports_router
+from backend.routes.roles import router as roles_router
 from backend.routes.users import router as users_router
+from backend.security import permission_middleware
 from database.connection import initialize_database, seed_default_data
 
 
@@ -33,6 +35,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.middleware("http")(permission_middleware)
+
 app.include_router(inventory_router)
 app.include_router(auth_router)
 app.include_router(dashboard_router)
@@ -45,6 +49,7 @@ app.include_router(dispatch_router)
 app.include_router(balance_router)
 app.include_router(reports_router)
 app.include_router(users_router)
+app.include_router(roles_router)
 
 
 @app.get("/")

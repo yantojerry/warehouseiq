@@ -39,11 +39,15 @@ from utils.styles import (
 
 
 class PaymentsPage(QWidget):
-    def __init__(self):
+    def __init__(self, permissions=None):
         super().__init__()
+        self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self._build_ui()
         self.load_payments()
+
+    def _can(self, permission):
+        return permission in self.permissions
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -106,10 +110,11 @@ class PaymentsPage(QWidget):
         self.search_input.setFixedWidth(240)
         toolbar.addWidget(self.search_input)
 
-        btn_add = QPushButton("Add Payment Record")
-        set_button_kind(btn_add, "teal")
-        btn_add.clicked.connect(self.open_add_payment)
-        toolbar.addWidget(btn_add)
+        if self._can("payments.manage"):
+            btn_add = QPushButton("Add Payment Record")
+            set_button_kind(btn_add, "teal")
+            btn_add.clicked.connect(self.open_add_payment)
+            toolbar.addWidget(btn_add)
         card_layout.addWidget(card_header)
 
         self.table = QTableWidget()
@@ -134,6 +139,9 @@ class PaymentsPage(QWidget):
         page.addStretch()
 
     def load_payments(self):
+        if not self._can("payments.view"):
+            self.table.setRowCount(0)
+            return
         search = self.search_input.text().strip()
         status = self.filter_combo.currentText()
         try:
@@ -205,18 +213,23 @@ class PaymentsPage(QWidget):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(4)
 
-        btn_pay = QPushButton("Add")
-        btn_pay.setFixedSize(70, 28)
-        set_button_kind(btn_pay, "teal")
-        btn_pay.setEnabled(payment_status != "Paid")
-        btn_pay.clicked.connect(lambda checked=False, pid=payment_id: self.add_payment(pid))
-        layout.addWidget(btn_pay)
+        if self._can("payments.manage"):
+            btn_pay = QPushButton("Add")
+            btn_pay.setFixedSize(70, 28)
+            set_button_kind(btn_pay, "teal")
+            btn_pay.setEnabled(payment_status != "Paid")
+            btn_pay.clicked.connect(lambda checked=False, pid=payment_id: self.add_payment(pid))
+            layout.addWidget(btn_pay)
 
-        btn_hist = QPushButton("History")
-        btn_hist.setFixedSize(82, 28)
-        set_button_kind(btn_hist, "outline")
-        btn_hist.clicked.connect(lambda checked=False, pid=payment_id: self.view_history(pid))
-        layout.addWidget(btn_hist)
+        if self._can("payments.view"):
+            btn_hist = QPushButton("History")
+            btn_hist.setFixedSize(82, 28)
+            set_button_kind(btn_hist, "outline")
+            btn_hist.clicked.connect(lambda checked=False, pid=payment_id: self.view_history(pid))
+            layout.addWidget(btn_hist)
+
+        if layout.count() == 0:
+            layout.addWidget(QLabel("-"))
         return widget
 
     def open_add_payment(self):

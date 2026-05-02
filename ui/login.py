@@ -16,7 +16,7 @@ from utils.api_client import ApiError, register, login as api_login
 from utils.styles import APP_THEME, canonical_role, set_button_kind
 
 
-SUPPORTED_ROLES = {"Admin", "Sales Staff", "Warehouse Staff", "Bookkeeper"}
+SUPPORTED_ROLES = {"Super Admin", "Admin", "Warehouseman", "Bookkeeper", "Cashier"}
 
 
 class CreateAccountDialog(QDialog):
@@ -41,15 +41,18 @@ class CreateAccountDialog(QDialog):
         title = QLabel("Create Account")
         title.setObjectName("login_title")
         layout.addWidget(title)
-        subtitle = QLabel("Admin can manage users later from User Management.")
+        subtitle = QLabel("Super Admin or Admin can manage users later from User Management.")
         subtitle.setObjectName("login_subtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
         self.display_name_input = self._add_input(layout, "Display Name", "Enter full name")
         self.username_input = self._add_input(layout, "Username", "Enter username")
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["Sales Staff", "Warehouse Staff", "Bookkeeper", "Admin"])
-        layout.addWidget(self._label("Role"))
+        self.role_combo.setFixedHeight(36)
+        self.role_combo.addItems(["Cashier", "Warehouseman", "Bookkeeper"])
+        role_label = self._label("Role")
+        role_label.setObjectName("form_label")
+        layout.addWidget(role_label)
         layout.addWidget(self.role_combo)
         self.password_input = self._add_input(layout, "Password", "Enter password", password=True)
         self.confirm_password_input = self._add_input(layout, "Confirm Password", "Confirm password", password=True)
@@ -132,6 +135,7 @@ class LoginPage(QDialog):
         self.authenticated_username = None
         self.authenticated_display_name = None
         self.authenticated_role = None
+        self.authenticated_permissions = []
         self.authenticated_user_id = None
         self._has_centered_on_show = False
         self._build_ui()
@@ -147,7 +151,7 @@ class LoginPage(QDialog):
         card.setFixedWidth(380)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(40, 36, 40, 36)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
         logo = QLabel("M")
         logo.setObjectName("login_logo")
@@ -210,6 +214,7 @@ class LoginPage(QDialog):
         line_edit = QLineEdit()
         line_edit.setObjectName("password_inside")
         line_edit.setPlaceholderText("Enter password")
+        line_edit.setFixedHeight(36)
         line_edit.setEchoMode(QLineEdit.Password)
         line_edit.returnPressed.connect(self.login)
         row_layout.addWidget(line_edit, 1)
@@ -269,6 +274,7 @@ class LoginPage(QDialog):
         self.authenticated_username = user.get("username") or username
         self.authenticated_display_name = user.get("display_name") or self.authenticated_username
         self.authenticated_role = role
+        self.authenticated_permissions = user.get("permissions") or []
         self.login_success.emit()
         self.accept()
 

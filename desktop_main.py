@@ -11,7 +11,7 @@ from PyQt5.QtGui import QFont
 from ui.login import LoginPage
 from ui.main_window import MainWindow
 from ui.components import error_dialog
-from utils.api_client import ApiError, is_api_available, wait_for_api
+from utils.api_client import ApiError, clear_session, is_api_available, wait_for_api
 from utils.styles import APP_THEME
 
 
@@ -62,9 +62,10 @@ def main():
                     username=getattr(login_page, "authenticated_username", None),
                     display_name=getattr(login_page, "authenticated_display_name", None),
                     role=getattr(login_page, "authenticated_role", None),
+                    permissions=getattr(login_page, "authenticated_permissions", None),
                 )
                 window.logout_requested.connect(
-                    lambda: (window.close(), show_login())
+                    lambda: (clear_session(), window.close(), show_login())
                 )
                 window_holder["window"] = window
                 window.show()

@@ -12,14 +12,49 @@ from PyQt5.QtWidgets import (
 )
 
 from utils.theme import COLORS, FONT_FALLBACK, FONT_MONO, FONT_UI, MONO_FALLBACK, STATUS_TONES
+from utils.roles import canonical_role, display_role
 
 
 APP_THEME = f"""
 QWidget {{
     background-color: {COLORS["background"]};
-    color: {COLORS["text"]};
+    color: {COLORS["white"]};
     font-family: "{FONT_UI}", "{FONT_FALLBACK}", Arial, sans-serif;
     font-size: 13px;
+}}
+
+QFrame {{
+    background: transparent;
+}}
+
+QLabel {{
+    background: transparent;
+    color: {COLORS["white"]};
+}}
+
+QCheckBox {{
+    background: transparent;
+    color: {COLORS["white"]};
+    spacing: 6px;
+}}
+
+QCheckBox::indicator {{
+    width: 15px;
+    height: 15px;
+    border-radius: 3px;
+    border: 1px solid {COLORS["border_2"]};
+    background-color: {COLORS["white"]};
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {COLORS["teal"]};
+    border-color: {COLORS["teal"]};
+}}
+
+QRadioButton {{
+    color: {COLORS["white"]};
+    background: transparent;
+    spacing: 6px;
 }}
 
 QMainWindow, #content_area, #page_content {{
@@ -155,11 +190,26 @@ QPushButton#sidebar_logout:hover {{
     letter-spacing: 0.6px;
 }}
 
-#card, #stat_card, #stat_card_navy, #stat_card_teal, #stat_card_amber,
-#stat_card_red, #stat_card_green, #stat_card_blue, #login_card {{
+#card, #card_header, #card_body, #login_card, #stat_card,
+#stat_card_navy, #stat_card_teal, #stat_card_amber,
+#stat_card_red, #stat_card_green, #stat_card_blue {{
     background-color: {COLORS["white"]};
     border: 1px solid {COLORS["border"]};
     border-radius: 14px;
+}}
+
+#card QLabel, #card_header QLabel, #card_body QLabel,
+#login_card QLabel, #stat_card QLabel,
+#stat_card_navy QLabel, #stat_card_teal QLabel,
+#stat_card_amber QLabel, #stat_card_red QLabel,
+#stat_card_green QLabel, #stat_card_blue QLabel {{
+    color: {COLORS["text"]};
+    background: transparent;
+}}
+
+#card QCheckBox, #card_body QCheckBox {{
+    color: {COLORS["text"]};
+    background: transparent;
 }}
 
 #login_card {{
@@ -180,14 +230,15 @@ QPushButton#sidebar_logout:hover {{
 
 #card_body {{
     background-color: {COLORS["white"]};
+    padding: 10px 14px;
 }}
 
-#stat_card_navy {{ border-top: 3px solid {COLORS["navy"]}; }}
-#stat_card_teal {{ border-top: 3px solid {COLORS["teal"]}; }}
-#stat_card_amber {{ border-top: 3px solid {COLORS["amber"]}; }}
-#stat_card_red {{ border-top: 3px solid {COLORS["red"]}; }}
-#stat_card_green {{ border-top: 3px solid {COLORS["green"]}; }}
-#stat_card_blue {{ border-top: 3px solid {COLORS["blue"]}; }}
+#stat_card_navy {{ border-left: 3px solid {COLORS["navy"]}; border-top: 1px solid {COLORS["border"]}; }}
+#stat_card_teal {{ border-left: 3px solid {COLORS["teal"]}; border-top: 1px solid {COLORS["border"]}; }}
+#stat_card_amber {{ border-left: 3px solid {COLORS["amber"]}; border-top: 1px solid {COLORS["border"]}; }}
+#stat_card_red {{ border-left: 3px solid {COLORS["red"]}; border-top: 1px solid {COLORS["border"]}; }}
+#stat_card_green {{ border-left: 3px solid {COLORS["green"]}; border-top: 1px solid {COLORS["border"]}; }}
+#stat_card_blue {{ border-left: 3px solid {COLORS["blue"]}; border-top: 1px solid {COLORS["border"]}; }}
 
 #stat_value {{
     color: {COLORS["text"]};
@@ -238,32 +289,36 @@ QPushButton {{
     color: {COLORS["white"]};
     border: none;
     border-radius: 6px;
-    padding: 8px 14px;
-    font-size: 12.5px;
+    padding: 0 14px;
+    min-height: 32px;
+    font-size: 12px;
     font-weight: 700;
 }}
 
-QPushButton:hover, QPushButton#btn_primary:hover, QPushButton#btn_teal:hover {{
+QPushButton:hover {{
     background-color: {COLORS["teal_light"]};
 }}
 
 QPushButton:disabled {{
     background-color: {COLORS["surface_2"]};
     color: {COLORS["muted"]};
+    border: 1px solid {COLORS["border"]};
 }}
 
 QPushButton#btn_primary, QPushButton#btn_teal, QPushButton#btn_success {{
     background-color: {COLORS["teal"]};
     color: {COLORS["white"]};
+    border: none;
 }}
 
 QPushButton#btn_navy {{
     background-color: {COLORS["navy"]};
     color: {COLORS["white"]};
+    border: none;
 }}
 
 QPushButton#btn_outline, QPushButton#btn_ghost {{
-    background-color: {COLORS["white"]};
+    background-color: transparent;
     color: {COLORS["text_2"]};
     border: 1px solid {COLORS["border_2"]};
 }}
@@ -273,13 +328,25 @@ QPushButton#btn_outline:hover, QPushButton#btn_ghost:hover {{
 }}
 
 QPushButton#btn_danger {{
-    background-color: {COLORS["red"]};
-    color: {COLORS["white"]};
+    background-color: transparent;
+    color: {COLORS["red"]};
+    border: 1px solid {COLORS["red"]};
+}}
+
+QPushButton#btn_danger:hover {{
+    background-color: {COLORS["red_pale"]};
+}}
+
+QPushButton#btn_danger:disabled {{
+    background-color: transparent;
+    color: {COLORS["muted"]};
+    border: 1px solid {COLORS["border"]};
 }}
 
 QPushButton#btn_warning {{
-    background-color: {COLORS["amber"]};
-    color: {COLORS["white"]};
+    background-color: transparent;
+    color: {COLORS["amber"]};
+    border: 1px solid {COLORS["amber"]};
 }}
 
 QPushButton#btn_link {{
@@ -287,6 +354,7 @@ QPushButton#btn_link {{
     color: {COLORS["teal"]};
     border: none;
     padding: 0;
+    min-height: 0;
 }}
 
 QPushButton#filter_button, QPushButton#pill_button, QPushButton#payment_option {{
@@ -309,7 +377,7 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit {{
     border: 1px solid {COLORS["border_2"]};
     border-radius: 6px;
     padding: 8px 11px;
-    min-height: 22px;
+    min-height: 34px;
 }}
 
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus {{
@@ -378,9 +446,10 @@ QLabel#badge_blue {{ background-color: {COLORS["blue_pale"]}; color: {COLORS["bl
 QLabel#badge_navy, QLabel#badge_teal, QLabel#badge_amber, QLabel#badge_red,
 QLabel#badge_green, QLabel#badge_gray, QLabel#badge_blue {{
     border-radius: 10px;
-    padding: 3px 9px;
+    padding: 2px 10px;
     font-size: 11px;
-    font-weight: 800;
+    font-weight: 700;
+    max-width: 110px;
 }}
 
 #login_page {{
@@ -477,9 +546,10 @@ STATUS_COLORS = {
 
 BADGE_TONES = dict(STATUS_TONES)
 BADGE_TONES.update({
+    "Super Admin": "red",
     "Admin": "navy",
-    "Sales Staff": "blue",
-    "Warehouse Staff": "amber",
+    "Cashier": "blue",
+    "Warehouseman": "amber",
     "Bookkeeper": "teal",
     "Warehouse": "amber",
 })
@@ -488,27 +558,6 @@ BADGE_TONES.update({
 def repolish(widget):
     widget.style().unpolish(widget)
     widget.style().polish(widget)
-
-
-def canonical_role(role):
-    text = (role or "").strip()
-    lowered = text.lower()
-    if lowered == "admin":
-        return "Admin"
-    if lowered in {"sales", "sales staff", "staff"}:
-        return "Sales Staff"
-    if lowered in {"warehouse", "warehouse staff"}:
-        return "Warehouse Staff"
-    if lowered in {"bookkeeper", "book keeper"}:
-        return "Bookkeeper"
-    return text
-
-
-def display_role(role):
-    canonical = canonical_role(role)
-    if canonical == "Warehouse Staff":
-        return "Warehouse"
-    return canonical or "Unknown"
 
 
 def set_button_kind(button, kind):

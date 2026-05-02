@@ -8,6 +8,8 @@ import urllib.request
 
 API_BASE_URL = os.getenv("WAREHOUSEIQ_API_URL", "http://127.0.0.1:8000")
 API_TIMEOUT = float(os.getenv("WAREHOUSEIQ_API_TIMEOUT", "10"))
+_SESSION_TOKEN = None
+_CURRENT_USER = None
 
 
 class ApiError(Exception):
@@ -29,6 +31,8 @@ def _build_url(path, params=None):
 def _request(method, path, data=None, params=None, expect_json=True):
     body = None
     headers = {"Accept": "application/json"}
+    if _SESSION_TOKEN:
+        headers["Authorization"] = f"Bearer {_SESSION_TOKEN}"
     if data is not None:
         body = json.dumps(data).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -83,11 +87,31 @@ def health():
     return _request("GET", "/health")
 
 
+def set_session(token=None, user=None):
+    global _SESSION_TOKEN, _CURRENT_USER
+    _SESSION_TOKEN = token
+    _CURRENT_USER = user
+
+
+def clear_session():
+    set_session(None, None)
+
+
+def current_user():
+    return _CURRENT_USER or {}
+
+
+def current_permission_keys():
+    return {item.get("key") for item in (_CURRENT_USER or {}).get("permissions", []) if item.get("key")}
+
+
 def login(username, password):
-    return _request("POST", "/auth/login", {"username": username, "password": password})
+    user = _request("POST", "/auth/login", {"username": username, "password": password})
+    set_session(user.get("session_token"), user)
+    return user
 
 
-def register(username, password, role="Sales Staff", display_name=None):
+def register(username, password, role="Cashier", display_name=None):
     return _request(
         "POST",
         "/auth/register",
@@ -114,6 +138,50 @@ def update_user(user_id, payload):
 
 def reset_user_password(user_id, password):
     return _request("POST", f"/users/{user_id}/reset-password", {"password": password})
+
+
+def get_user_tasks(user_id):
+    return _request("GET", f"/users/{user_id}/tasks")
+
+
+def update_user_tasks(user_id, permissions):
+    return _request("PUT", f"/users/{user_id}/tasks", {"permissions": permissions})
+
+
+def list_roles():
+    return _request("GET", "/roles")
+
+
+def create_role(payload):
+    return _request("POST", "/roles", payload)
+
+
+def update_role(role_id, payload):
+    return _request("PUT", f"/roles/{urllib.parse.quote(str(role_id))}", payload)
+
+
+def get_role_permissions(role_id):
+    return _request("GET", f"/roles/{urllib.parse.quote(str(role_id))}/permissions")
+
+
+def update_role_permissions(role_id, permissions):
+    return _request("PUT", f"/roles/{urllib.parse.quote(str(role_id))}/permissions", {"permissions": permissions})
+
+
+def list_permissions():
+    return _request("GET", "/permissions")
+
+
+def create_permission(payload):
+    return _request("POST", "/permissions", payload)
+
+
+def update_permission(permission_id, payload):
+    return _request("PUT", f"/permissions/{permission_id}", payload)
+
+
+def delete_permission(permission_id):
+    return _request("DELETE", f"/permissions/{permission_id}")
 
 
 def get_dashboard_overview():

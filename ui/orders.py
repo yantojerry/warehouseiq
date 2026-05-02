@@ -42,8 +42,9 @@ from utils.styles import (
 
 
 class OrdersPage(QWidget):
-    def __init__(self):
+    def __init__(self, permissions=None):
         super().__init__()
+        self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self._build_ui()
         self.load_orders()
@@ -51,6 +52,9 @@ class OrdersPage(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.load_orders)
         self.timer.start(10000)
+
+    def _can(self, permission):
+        return permission in self.permissions
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -90,10 +94,11 @@ class OrdersPage(QWidget):
         btn_refresh.clicked.connect(self.load_orders)
         header.addWidget(btn_refresh)
 
-        btn_new = QPushButton("New Order")
-        set_button_kind(btn_new, "teal")
-        btn_new.clicked.connect(self.open_new_order)
-        header.addWidget(btn_new)
+        if self._can("orders.create"):
+            btn_new = QPushButton("New Order")
+            set_button_kind(btn_new, "teal")
+            btn_new.clicked.connect(self.open_new_order)
+            header.addWidget(btn_new)
         page.addLayout(header)
 
         notice = QFrame()
@@ -145,15 +150,24 @@ class OrdersPage(QWidget):
         page.addStretch()
 
     def load_orders(self):
+        if not self._can("orders.view"):
+            self.table.setRowCount(0)
+            return
         display_filter = self.status_filter.currentText()
         status = backend_order_status(display_filter)
 
         try:
             rows = list_orders(status=status)
-            invoices = list_invoices()
-            payments = list_payments()
         except ApiError:
             return
+        try:
+            invoices = list_invoices() if self._can("invoices.view") else []
+        except ApiError:
+            invoices = []
+        try:
+            payments = list_payments() if self._can("payments.view") else []
+        except ApiError:
+            payments = []
 
         invoice_by_order = {
             row.get("order_number"): row
@@ -226,18 +240,23 @@ class OrdersPage(QWidget):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(4)
 
-        btn_view = QPushButton("View")
-        btn_view.setFixedSize(58, 28)
-        set_button_kind(btn_view, "outline")
-        btn_view.clicked.connect(lambda checked=False, oid=order_id: self.view_order(oid))
-        layout.addWidget(btn_view)
+        if self._can("orders.view"):
+            btn_view = QPushButton("View")
+            btn_view.setFixedSize(58, 28)
+            set_button_kind(btn_view, "outline")
+            btn_view.clicked.connect(lambda checked=False, oid=order_id: self.view_order(oid))
+            layout.addWidget(btn_view)
 
-        btn_dispatch = QPushButton("Dispatch")
-        btn_dispatch.setFixedSize(82, 28)
-        set_button_kind(btn_dispatch, "teal")
-        btn_dispatch.setEnabled(status != "Completed")
-        btn_dispatch.clicked.connect(lambda checked=False, oid=order_id, current=status: self.dispatch_order(oid, current))
-        layout.addWidget(btn_dispatch)
+        if self._can("orders.update"):
+            btn_dispatch = QPushButton("Dispatch")
+            btn_dispatch.setFixedSize(82, 28)
+            set_button_kind(btn_dispatch, "teal")
+            btn_dispatch.setEnabled(status != "Completed")
+            btn_dispatch.clicked.connect(lambda checked=False, oid=order_id, current=status: self.dispatch_order(oid, current))
+            layout.addWidget(btn_dispatch)
+
+        if layout.count() == 0:
+            layout.addWidget(QLabel("-"))
         return widget
 
     def dispatch_order(self, order_id, current_status):

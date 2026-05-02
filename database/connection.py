@@ -4,6 +4,9 @@ import secrets
 import sqlite3
 from pathlib import Path
 
+from utils.permission_catalog import PERMISSIONS
+from utils.roles import ROLE_ADMIN, ROLE_SUPER_ADMIN, SYSTEM_ROLES, canonical_role
+
 
 DB_PATH = Path(os.getenv("WAREHOUSEIQ_DB_PATH", Path(__file__).resolve().parent.parent / "warehouse.db"))
 _SCHEMA_VERIFIED = False
@@ -148,6 +151,8 @@ def seed_default_data():
     connection = get_connection()
     cursor = connection.cursor()
     try:
+        _ensure_super_admin_account(connection)
+
         cursor.execute("SELECT COUNT(*) FROM users")
         if cursor.fetchone()[0] == 0:
             cursor.execute(
@@ -155,7 +160,7 @@ def seed_default_data():
                 INSERT INTO users (username, password, password_hash, display_name, role, status)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                ("admin", "admin123", hash_password("admin123"), "System Admin", "Admin", "Active"),
+                ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
             )
 
         cursor.execute("SELECT COUNT(*) FROM inventory")
@@ -207,7 +212,7 @@ def _ensure_schema(connection):
                 password TEXT,
                 password_hash TEXT,
                 display_name TEXT,
-                role TEXT NOT NULL DEFAULT 'Sales Staff',
+                role TEXT NOT NULL DEFAULT 'Cashier',
                 status TEXT NOT NULL DEFAULT 'Active',
                 last_login_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -353,6 +358,86 @@ def _ensure_schema(connection):
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS roles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                is_system INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS permissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                permission_key TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'General',
+                module_key TEXT,
+                description TEXT,
+                is_system INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                role_id INTEGER NOT NULL,
+                permission_id INTEGER NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (role_id, permission_id),
+                FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+                FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_tasks (
+                user_id INTEGER NOT NULL,
+                permission_id INTEGER NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                assigned_by INTEGER,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, permission_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
+                FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                expires_at TEXT,
+                revoked_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_hash ON user_sessions(token_hash)")
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS inventory_updated_at
             AFTER UPDATE ON inventory
             FOR EACH ROW
@@ -363,6 +448,9 @@ def _ensure_schema(connection):
             """
         )
         _ensure_columns(connection)
+        _ensure_roles_and_permissions(connection)
+        _apply_role_permission_migrations(connection)
+        _ensure_super_admin_account(connection)
         _repair_payment_history_fk(connection)
         _upgrade_legacy_passwords(connection)
         connection.commit()
@@ -376,7 +464,7 @@ def _ensure_columns(connection):
             "password": "TEXT",
             "password_hash": "TEXT",
             "display_name": "TEXT",
-            "role": "TEXT NOT NULL DEFAULT 'Sales Staff'",
+            "role": "TEXT NOT NULL DEFAULT 'Cashier'",
             "status": "TEXT NOT NULL DEFAULT 'Active'",
             "last_login_at": "TEXT",
             "updated_at": "TEXT",
@@ -439,6 +527,214 @@ def _upgrade_legacy_passwords(connection):
             if updates:
                 params.append(row["id"])
                 cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
+    finally:
+        cursor.close()
+
+
+def _ensure_roles_and_permissions(connection):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        for role in SYSTEM_ROLES:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO roles (name, description, is_system)
+                VALUES (?, ?, 1)
+                """,
+                (role, f"{role} system role"),
+            )
+
+        cursor.execute("SELECT id, role FROM users")
+        for row in cursor.fetchall():
+            normalized = canonical_role(row.get("role"))
+            if normalized and normalized != row.get("role"):
+                cursor.execute("UPDATE users SET role = ? WHERE id = ?", (normalized, row["id"]))
+
+        for permission in PERMISSIONS:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO permissions (
+                    permission_key, label, category, module_key,
+                    description, is_system, sort_order
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    permission.key,
+                    permission.label,
+                    permission.category,
+                    permission.module_key,
+                    permission.description,
+                    permission.is_system,
+                    permission.sort_order,
+                ),
+            )
+
+        cursor.execute("SELECT id, name FROM roles")
+        role_ids = {row["name"]: row["id"] for row in cursor.fetchall()}
+        cursor.execute("SELECT id, permission_key FROM permissions")
+        permission_ids = {row["permission_key"]: row["id"] for row in cursor.fetchall()}
+
+        for permission in PERMISSIONS:
+            default_roles = set(permission.default_roles)
+            default_roles.add(ROLE_SUPER_ADMIN)
+            for role_name in default_roles:
+                role_id = role_ids.get(role_name)
+                permission_id = permission_ids.get(permission.key)
+                if role_id and permission_id:
+                    cursor.execute(
+                        """
+                        INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+                        VALUES (?, ?, 1)
+                        """,
+                        (role_id, permission_id),
+                    )
+    finally:
+        cursor.close()
+
+
+def _set_role_permissions(cursor, role_id, permission_ids, enabled_keys):
+    for permission_key, permission_id in permission_ids.items():
+        is_enabled = 1 if permission_key in enabled_keys else 0
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+            VALUES (?, ?, ?)
+            """,
+            (role_id, permission_id, is_enabled),
+        )
+        cursor.execute(
+            """
+            UPDATE role_permissions
+            SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE role_id = ? AND permission_id = ?
+            """,
+            (is_enabled, role_id, permission_id),
+        )
+
+
+def _apply_role_permission_migrations(connection):
+    migration_key = "2026_05_super_admin_role_defaults"
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT value FROM schema_meta WHERE key = ? LIMIT 1", (migration_key,))
+        if not cursor.fetchone():
+            cursor.execute("SELECT id, name FROM roles")
+            role_ids = {row["name"]: row["id"] for row in cursor.fetchall()}
+            cursor.execute("SELECT id, permission_key FROM permissions")
+            permission_ids = {row["permission_key"]: row["id"] for row in cursor.fetchall()}
+
+            for permission in PERMISSIONS:
+                cursor.execute(
+                    """
+                    UPDATE permissions
+                    SET label = ?, category = ?, module_key = ?, description = ?,
+                        is_system = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE permission_key = ?
+                    """,
+                    (
+                        permission.label,
+                        permission.category,
+                        permission.module_key,
+                        permission.description,
+                        permission.is_system,
+                        permission.sort_order,
+                        permission.key,
+                    ),
+                )
+
+            super_admin_id = role_ids.get(ROLE_SUPER_ADMIN)
+            admin_id = role_ids.get(ROLE_ADMIN)
+            if super_admin_id:
+                _set_role_permissions(cursor, super_admin_id, permission_ids, set(permission_ids.keys()))
+            if admin_id:
+                _set_role_permissions(
+                    cursor,
+                    admin_id,
+                    permission_ids,
+                    {"settings.view", "users.add", "users.add_admin"},
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO schema_meta (key, value, updated_at)
+                VALUES (?, 'applied', CURRENT_TIMESTAMP)
+                """,
+                (migration_key,),
+            )
+    finally:
+        cursor.close()
+
+    migration_key = "2026_05_admin_user_view_access"
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT value FROM schema_meta WHERE key = ? LIMIT 1", (migration_key,))
+        if cursor.fetchone():
+            return
+
+        cursor.execute("SELECT id FROM roles WHERE name = ? LIMIT 1", (ROLE_ADMIN,))
+        admin = cursor.fetchone()
+        cursor.execute("SELECT id FROM permissions WHERE permission_key = 'users.view' LIMIT 1")
+        permission = cursor.fetchone()
+        if admin and permission:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO role_permissions (role_id, permission_id, is_enabled)
+                VALUES (?, ?, 1)
+                """,
+                (admin["id"], permission["id"]),
+            )
+            cursor.execute(
+                """
+                UPDATE role_permissions
+                SET is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE role_id = ? AND permission_id = ?
+                """,
+                (admin["id"], permission["id"]),
+            )
+
+        cursor.execute(
+            """
+            INSERT INTO schema_meta (key, value, updated_at)
+            VALUES (?, 'applied', CURRENT_TIMESTAMP)
+            """,
+            (migration_key,),
+        )
+    finally:
+        cursor.close()
+
+
+def _ensure_super_admin_account(connection):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id FROM users WHERE role = ? LIMIT 1", (ROLE_SUPER_ADMIN,))
+        if cursor.fetchone():
+            return
+
+        cursor.execute("SELECT id, password, password_hash FROM users WHERE LOWER(username) = 'admin' LIMIT 1")
+        existing_admin = cursor.fetchone()
+        if existing_admin:
+            cursor.execute(
+                """
+                UPDATE users
+                SET role = ?, status = 'Active', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (ROLE_SUPER_ADMIN, existing_admin["id"]),
+            )
+            if not existing_admin.get("password_hash") and existing_admin.get("password"):
+                cursor.execute(
+                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    (hash_password(existing_admin["password"]), existing_admin["id"]),
+                )
+            return
+
+        cursor.execute(
+            """
+            INSERT INTO users (username, password, password_hash, display_name, role, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
+        )
     finally:
         cursor.close()
 

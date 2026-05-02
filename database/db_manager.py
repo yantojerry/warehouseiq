@@ -1,4 +1,5 @@
 from database.connection import get_connection, hash_password, verify_password
+from utils.roles import ROLE_SUPER_ADMIN
 
 
 def authenticate_user(username, password):
@@ -67,7 +68,7 @@ def seed_default_admin():
                 INSERT INTO users (username, password, password_hash, display_name, role, status)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                ("admin", "admin123", hash_password("admin123"), "System Admin", "Admin", "Active"),
+                ("admin", "admin123", hash_password("admin123"), "System Super Admin", ROLE_SUPER_ADMIN, "Active"),
             )
             conn.commit()
     finally:

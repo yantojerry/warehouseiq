@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -29,13 +28,17 @@ from utils.styles import COLORS, configure_table, make_badge, set_button_kind, t
 
 
 class CustomersPage(QWidget):
-    def __init__(self):
+    def __init__(self, permissions=None):
         super().__init__()
+        self.permissions = set(permissions or ())
         self.setObjectName("content_area")
         self.customers = []
         self._load_error_shown = False
         self._build_ui()
         self.load_customers()
+
+    def _can(self, permission):
+        return permission in self.permissions
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -69,12 +72,14 @@ class CustomersPage(QWidget):
         self.search_input.setPlaceholderText("Search customers...")
         self.search_input.textChanged.connect(self.load_customers)
         self.search_input.setFixedWidth(260)
+        self.search_input.setFixedHeight(36)
         header.addWidget(self.search_input)
 
-        add = QPushButton("Add Customer")
-        set_button_kind(add, "teal")
-        add.clicked.connect(self.open_add_dialog)
-        header.addWidget(add)
+        if self._can("customers.manage"):
+            add = QPushButton("Add Customer")
+            set_button_kind(add, "teal")
+            add.clicked.connect(self.open_add_dialog)
+            header.addWidget(add)
         page.addLayout(header)
 
         badges = QHBoxLayout()
@@ -122,6 +127,10 @@ class CustomersPage(QWidget):
         page.addStretch()
 
     def load_customers(self):
+        if not self._can("customers.view"):
+            self.customers = []
+            self._render_customers()
+            return
         search = self.search_input.text().strip()
         try:
             rows = list_customers(search=search or None)
@@ -208,24 +217,29 @@ class CustomersPage(QWidget):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(4)
 
-        view = QPushButton("View")
-        view.setFixedSize(54, 28)
-        set_button_kind(view, "outline")
-        view.clicked.connect(lambda checked=False, data=row: self.view_customer(data))
-        layout.addWidget(view)
+        if self._can("customers.view"):
+            view = QPushButton("View")
+            view.setFixedSize(54, 28)
+            set_button_kind(view, "outline")
+            view.clicked.connect(lambda checked=False, data=row: self.view_customer(data))
+            layout.addWidget(view)
 
-        pay = QPushButton("Pay")
-        pay.setFixedSize(54, 28)
-        set_button_kind(pay, "teal")
-        pay.setEnabled(float(row.get("balance") or 0) > 0)
-        pay.clicked.connect(lambda checked=False, data=row: self.pay_customer(data))
-        layout.addWidget(pay)
+        if self._can("customers.manage"):
+            pay = QPushButton("Pay")
+            pay.setFixedSize(54, 28)
+            set_button_kind(pay, "teal")
+            pay.setEnabled(float(row.get("balance") or 0) > 0)
+            pay.clicked.connect(lambda checked=False, data=row: self.pay_customer(data))
+            layout.addWidget(pay)
 
-        edit = QPushButton("Edit")
-        edit.setFixedSize(54, 28)
-        set_button_kind(edit, "outline")
-        edit.clicked.connect(lambda checked=False, data=row: self.edit_customer(data))
-        layout.addWidget(edit)
+            edit = QPushButton("Edit")
+            edit.setFixedSize(54, 28)
+            set_button_kind(edit, "outline")
+            edit.clicked.connect(lambda checked=False, data=row: self.edit_customer(data))
+            layout.addWidget(edit)
+
+        if layout.count() == 0:
+            layout.addWidget(QLabel("-"))
         return widget
 
     def view_customer(self, row):
@@ -274,15 +288,20 @@ class CustomerPaymentDialog(QDialog):
         balance_lbl.setStyleSheet(f"color:{COLORS['red']}; font-size:14px; font-weight:700;")
         layout.addWidget(balance_lbl)
 
-        form = QFormLayout()
+        form = QVBoxLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(10)
         self.amount_input = QDoubleSpinBox()
+        self.amount_input.setFixedHeight(36)
         self.amount_input.setRange(0.01, max(balance, 0.01))
         self.amount_input.setValue(max(balance, 0.01))
         self.amount_input.setPrefix("PHP ")
-        form.addRow("Payment Amount *:", self.amount_input)
+        form.addWidget(self._form_label("Payment Amount *"))
+        form.addWidget(self.amount_input)
         layout.addLayout(form)
 
         btns = QHBoxLayout()
+        btns.setSpacing(8)
         cancel = QPushButton("Cancel")
         set_button_kind(cancel, "outline")
         cancel.clicked.connect(self.reject)
@@ -302,6 +321,12 @@ class CustomerPaymentDialog(QDialog):
         except ApiError as exc:
             error_dialog(self, "Error", str(exc))
 
+    @staticmethod
+    def _form_label(text):
+        label = QLabel(text.upper())
+        label.setObjectName("form_label")
+        return label
+
 
 class AddCustomerDialog(QDialog):
     def __init__(self, parent, existing=None):
@@ -320,22 +345,30 @@ class AddCustomerDialog(QDialog):
         title.setObjectName("login_title")
         layout.addWidget(title)
 
-        form = QFormLayout()
+        form = QVBoxLayout()
+        form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(10)
         self.name_input = QLineEdit()
+        self.name_input.setFixedHeight(36)
         self.name_input.setText(self.existing.get("name", ""))
         self.contact_input = QLineEdit()
+        self.contact_input.setFixedHeight(36)
         self.contact_input.setText(self.existing.get("contact", "") if self.existing.get("contact") != "-" else "")
         self.type_combo = QComboBox()
+        self.type_combo.setFixedHeight(36)
         self.type_combo.addItems(["Walk-in", "Reseller", "Wholesale"])
         self.type_combo.setCurrentText(self.existing.get("type", "Walk-in"))
 
-        form.addRow("Full Name *:", self.name_input)
-        form.addRow("Contact:", self.contact_input)
-        form.addRow("Customer Type:", self.type_combo)
+        form.addWidget(self._form_label("Full Name *"))
+        form.addWidget(self.name_input)
+        form.addWidget(self._form_label("Contact"))
+        form.addWidget(self.contact_input)
+        form.addWidget(self._form_label("Customer Type"))
+        form.addWidget(self.type_combo)
         layout.addLayout(form)
 
         btns = QHBoxLayout()
+        btns.setSpacing(8)
         cancel = QPushButton("Cancel")
         set_button_kind(cancel, "outline")
         cancel.clicked.connect(self.reject)
@@ -364,3 +397,9 @@ class AddCustomerDialog(QDialog):
             self.accept()
         except ApiError as exc:
             error_dialog(self, "Error", str(exc))
+
+    @staticmethod
+    def _form_label(text):
+        label = QLabel(text.upper())
+        label.setObjectName("form_label")
+        return label

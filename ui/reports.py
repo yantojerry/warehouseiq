@@ -81,6 +81,7 @@ class ReportsPage(QWidget):
             return
         for row in rows:
             line = QHBoxLayout()
+            line.setSpacing(10)
             line.addWidget(make_badge(row.get(key) or "Unknown", "navy"))
             line.addStretch()
             amount = row.get(value) or 0
