@@ -25,6 +25,11 @@ BLUE = "#1d4ed8"
 BLUE_PALE = "#eff6ff"
 MUTED = "#94a3b8"
 PAPER_WARNING = "#fff8f8"
+SUPER_SIDEBAR = "#21131b"
+SUPER_SIDEBAR_2 = "#3a2030"
+SUPER_SIDEBAR_3 = "#573049"
+SUPER_ACCENT = "#d6a84f"
+SUPER_ACCENT_PALE = "#fff4d8"
 
 FONT_UI = "Plus Jakarta Sans"
 FONT_MONO = "DM Mono"
@@ -68,6 +73,11 @@ COLORS = {
     "navy_pale": NAVY_PALE,
     "muted": MUTED,
     "paper_warning": PAPER_WARNING,
+    "super_sidebar": SUPER_SIDEBAR,
+    "super_sidebar_2": SUPER_SIDEBAR_2,
+    "super_sidebar_3": SUPER_SIDEBAR_3,
+    "super_accent": SUPER_ACCENT,
+    "super_accent_pale": SUPER_ACCENT_PALE,
 }
 
 STATUS_TONES = {

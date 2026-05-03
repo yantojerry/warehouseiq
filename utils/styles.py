@@ -75,8 +75,17 @@ QScrollArea, QScrollArea > QWidget > QWidget {{
     border-right: 1px solid {COLORS["navy_2"]};
 }}
 
+#sidebar_super_admin {{
+    background-color: {COLORS["super_sidebar"]};
+    border-right: 1px solid {COLORS["super_sidebar_3"]};
+}}
+
 #sidebar_brand {{
     background-color: {COLORS["navy"]};
+}}
+
+#sidebar_brand_super_admin {{
+    background-color: {COLORS["super_sidebar"]};
 }}
 
 #brand_logo, #login_logo {{
@@ -85,6 +94,14 @@ QScrollArea, QScrollArea > QWidget > QWidget {{
     border-radius: 8px;
     font-size: 14px;
     font-weight: 800;
+}}
+
+#brand_logo_super_admin {{
+    background-color: {COLORS["super_accent"]};
+    color: {COLORS["super_sidebar"]};
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 900;
 }}
 
 #brand_label, #profile_name {{
@@ -99,6 +116,12 @@ QScrollArea, QScrollArea > QWidget > QWidget {{
     font-weight: 800;
 }}
 
+#brand_accent_super_admin {{
+    color: {COLORS["super_accent"]};
+    background: transparent;
+    font-weight: 900;
+}}
+
 #sidebar_divider, #line_divider {{
     background-color: {COLORS["border"]};
     border: none;
@@ -109,12 +132,24 @@ QScrollArea, QScrollArea > QWidget > QWidget {{
     background-color: {COLORS["navy_2"]};
 }}
 
+#sidebar_profile_super_admin {{
+    background-color: {COLORS["super_sidebar_2"]};
+}}
+
 #user_avatar {{
     background-color: {COLORS["navy_3"]};
     color: {COLORS["white"]};
     border: 2px solid {COLORS["teal_light"]};
     border-radius: 20px;
     font-weight: 700;
+}}
+
+#user_avatar_super_admin {{
+    background-color: {COLORS["super_sidebar_3"]};
+    color: {COLORS["super_accent_pale"]};
+    border: 2px solid {COLORS["super_accent"]};
+    border-radius: 20px;
+    font-weight: 800;
 }}
 
 #nav_section_label {{
@@ -146,6 +181,40 @@ QToolButton#nav_button:hover {{
 QToolButton#nav_button_active {{
     background-color: {COLORS["teal"]};
     color: {COLORS["white"]};
+}}
+
+QToolButton#nav_parent_super, QToolButton#nav_parent_super_expanded,
+QToolButton#nav_parent_super_active, QToolButton#nav_button_super,
+QToolButton#nav_button_super_active {{
+    border: none;
+    border-radius: 8px;
+    min-height: 38px;
+    padding: 0 12px;
+    text-align: left;
+}}
+
+QToolButton#nav_parent_super, QToolButton#nav_button_super {{
+    background-color: transparent;
+    color: {COLORS["muted"]};
+}}
+
+QToolButton#nav_parent_super:hover, QToolButton#nav_button_super:hover {{
+    background-color: {COLORS["super_sidebar_2"]};
+    color: {COLORS["white"]};
+}}
+
+QToolButton#nav_parent_super_expanded {{
+    background-color: {COLORS["super_sidebar_2"]};
+    color: {COLORS["super_accent_pale"]};
+}}
+
+QToolButton#nav_parent_super_active, QToolButton#nav_button_super_active {{
+    background-color: {COLORS["super_accent"]};
+    color: {COLORS["super_sidebar"]};
+}}
+
+#sidebar_nav_group {{
+    background: transparent;
 }}
 
 QPushButton#sidebar_logout {{
@@ -442,9 +511,10 @@ QLabel#badge_red {{ background-color: {COLORS["red_pale"]}; color: {COLORS["red"
 QLabel#badge_green {{ background-color: {COLORS["green_pale"]}; color: {COLORS["green"]}; }}
 QLabel#badge_gray {{ background-color: {COLORS["surface_2"]}; color: {COLORS["text_3"]}; }}
 QLabel#badge_blue {{ background-color: {COLORS["blue_pale"]}; color: {COLORS["blue"]}; }}
+QLabel#badge_super_admin {{ background-color: {COLORS["super_accent_pale"]}; color: {COLORS["super_sidebar"]}; }}
 
 QLabel#badge_navy, QLabel#badge_teal, QLabel#badge_amber, QLabel#badge_red,
-QLabel#badge_green, QLabel#badge_gray, QLabel#badge_blue {{
+QLabel#badge_green, QLabel#badge_gray, QLabel#badge_blue, QLabel#badge_super_admin {{
     border-radius: 10px;
     padding: 2px 10px;
     font-size: 11px;

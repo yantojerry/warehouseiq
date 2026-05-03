@@ -2,16 +2,15 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -58,7 +57,6 @@ class RoleTaskManagementPage(QWidget):
         self.current_role_payload = None
         self.current_permissions = []
         self._checks = {}
-        self.editing_permission = None
         self.setObjectName("content_area")
         self._build_ui()
         self.load_roles()
@@ -85,22 +83,24 @@ class RoleTaskManagementPage(QWidget):
         self.role_combo.currentIndexChanged.connect(self.load_selected_role)
         header.addWidget(self.role_combo)
 
-        new_role = QPushButton("New Role")
+        new_role = QPushButton("Add a new role")
+        new_role.setMinimumHeight(34)
         set_button_kind(new_role, "outline")
         new_role.clicked.connect(self.add_role)
         header.addWidget(new_role)
 
-        self.save_task_btn = QPushButton("Save Task")
-        self.save_task_btn.setMinimumHeight(34)
-        set_button_kind(self.save_task_btn, "teal")
-        self.save_task_btn.clicked.connect(self.save_task)
-        header.addWidget(self.save_task_btn)
+        self.add_task_combo = QComboBox()
+        self.add_task_combo.setMinimumWidth(190)
+        self.add_task_combo.setFixedHeight(36)
+        self.add_task_combo.addItem("Add New Task", None)
+        self.add_task_combo.addItem("Custom Task", "")
+        for module in MODULE_KEYS:
+            if module:
+                self.add_task_combo.addItem(f"{module.replace('_', ' ').title()} Task", module)
+        self.add_task_combo.activated.connect(self._add_task_from_dropdown)
+        header.addWidget(self.add_task_combo)
 
         root.addLayout(header)
-
-        body = QHBoxLayout()
-        body.setSpacing(14)
-        root.addLayout(body, 1)
 
         left_card = QFrame()
         left_card.setObjectName("card")
@@ -137,57 +137,7 @@ class RoleTaskManagementPage(QWidget):
         self.permission_layout.setSpacing(8)
         self.scroll.setWidget(self.permission_container)
         left.addWidget(self.scroll, 1)
-        body.addWidget(left_card, 2)
-
-        form_card = QFrame()
-        form_card.setObjectName("card")
-        form = QVBoxLayout(form_card)
-        form.setContentsMargins(18, 16, 18, 16)
-        form.setSpacing(10)
-
-        form_title = QLabel("Task Details")
-        form_title.setObjectName("card_title")
-        form.addWidget(form_title)
-
-        self.label_input = self._line(form, "Label")
-        self.key_input = self._line(form, "Permission Key")
-        self.category_input = QLineEdit()
-        self.category_input.setMinimumHeight(34)
-        self._add_field(form, "Category", self.category_input)
-        self.module_combo = QComboBox()
-        self.module_combo.setMinimumHeight(34)
-        self.module_combo.setEditable(True)
-        self.module_combo.addItems(MODULE_KEYS)
-        self._add_field(form, "Module", self.module_combo)
-
-        self.description_input = QTextEdit()
-        self.description_input.setFixedHeight(80)
-        self._add_field(form, "Description", self.description_input)
-
-        btns = QHBoxLayout()
-        btns.setSpacing(8)
-        self.new_task_btn = QPushButton("New Task")
-        self.new_task_btn.setMinimumHeight(34)
-        set_button_kind(self.new_task_btn, "outline")
-        self.new_task_btn.clicked.connect(self.clear_form)
-        btns.addWidget(self.new_task_btn)
-        form.addLayout(btns)
-        form.addStretch()
-        body.addWidget(form_card, 1)
-
-    def _line(self, layout, label):
-        field = QLineEdit()
-        field.setMinimumHeight(34)
-        self._add_field(layout, label, field)
-        return field
-
-    def _add_field(self, layout, label, field):
-        field_layout = QVBoxLayout()
-        field_layout.setContentsMargins(0, 0, 0, 0)
-        field_layout.setSpacing(4)
-        field_layout.addWidget(self._form_label(label))
-        field_layout.addWidget(field)
-        layout.addLayout(field_layout)
+        root.addWidget(left_card, 1)
 
     @staticmethod
     def _form_label(text):
@@ -234,7 +184,6 @@ class RoleTaskManagementPage(QWidget):
         self.current_permissions = payload.get("permissions") or []
         self.role_title.setText(f"{self.current_role_payload.get('name', 'Role')} Tasks")
         self.render_permissions()
-        self.clear_form()
 
     def render_permissions(self):
         self._clear_layout(self.permission_layout)
@@ -373,61 +322,58 @@ class RoleTaskManagementPage(QWidget):
         return row
 
     def edit_task(self, permission):
-        self.editing_permission = permission
-        self.label_input.setText(permission.get("label") or "")
-        self.key_input.setText(permission.get("permission_key") or "")
-        self.key_input.setEnabled(not permission.get("is_system"))
-        self.category_input.setText(permission.get("category") or "General")
-        module_key = permission.get("module_key") or ""
-        if self.module_combo.findText(module_key) == -1:
-            self.module_combo.addItem(module_key)
-        self.module_combo.setCurrentText(module_key)
-        self.description_input.setPlainText(permission.get("description") or "")
-
-    def clear_form(self):
-        self.editing_permission = None
-        self.label_input.clear()
-        self.key_input.clear()
-        self.key_input.setEnabled(True)
-        self.category_input.setText("General")
-        self.module_combo.setCurrentText("")
-        self.description_input.clear()
-
-    def _form_payload(self):
-        label = self.label_input.text().strip()
-        if not label:
-            warning_dialog(self, "Validation", "Task label is required.")
-            return None
-        return {
-            "label": label,
-            "permission_key": self.key_input.text().strip() or None,
-            "category": self.category_input.text().strip() or "General",
-            "module_key": self.module_combo.currentText().strip() or None,
-            "description": self.description_input.toPlainText().strip() or None,
-        }
-
-    def save_task(self):
-        payload = self._form_payload()
-        if not payload:
+        dialog = RoleTaskDialog(
+            self,
+            categories=self._visible_categories(),
+            modules=self._visible_modules(),
+            permission=permission,
+        )
+        if dialog.exec_() != QDialog.Accepted:
             return
-        action = "update" if self.editing_permission else "add"
+        payload = dialog.payload()
         if not confirm_dialog(
             self,
             "Confirm Task Change",
-            f"Do you want to {action} this task?\n\n{payload['label']}",
+            f"Do you want to update this task?\n\n{payload['label']}",
             "Save Task",
         ):
             return
         try:
-            if self.editing_permission:
-                permission = update_permission(self.editing_permission["id"], payload)
-                info_dialog(self, "Task Saved", f"{permission.get('label')} was updated.")
-                self.load_selected_role()
-            else:
-                permission = create_permission(payload)
-                self._enable_new_permission(permission["id"])
-                info_dialog(self, "Task Added", f"{permission.get('label')} was added.")
-                self.load_selected_role()
+            saved = update_permission(permission["id"], payload)
+            info_dialog(self, "Task Saved", f"{saved.get('label')} was updated.")
+            self.load_selected_role()
+        except ApiError as exc:
+            error_dialog(self, "Task", str(exc))
+
+    def _add_task_from_dropdown(self, index):
+        module_key = self.add_task_combo.itemData(index)
+        if module_key is None:
+            return
+        self.add_task(module_key)
+        self.add_task_combo.setCurrentIndex(0)
+
+    def add_task(self, default_module=None):
+        dialog = RoleTaskDialog(
+            self,
+            categories=self._visible_categories(),
+            modules=self._visible_modules(),
+            default_module=default_module,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        payload = dialog.payload()
+        if not confirm_dialog(
+            self,
+            "Confirm Task Change",
+            f"Do you want to add this task?\n\n{payload['label']}",
+            "Save Task",
+        ):
+            return
+        try:
+            permission = create_permission(payload)
+            self._enable_new_permission(permission["id"])
+            info_dialog(self, "Task Added", f"{permission.get('label')} was added.")
+            self.load_selected_role()
         except ApiError as exc:
             error_dialog(self, "Task", str(exc))
 
@@ -477,17 +423,43 @@ class RoleTaskManagementPage(QWidget):
         ]
 
     def add_role(self):
-        name, ok = QInputDialog.getText(self, "New Role", "Role name:")
-        if not ok or not name.strip():
+        dialog = RoleDialog(self)
+        if dialog.exec_() != QDialog.Accepted:
             return
+        name = dialog.role_name()
         try:
-            role = create_role({"name": name.strip(), "description": f"{name.strip()} role"})
+            role = create_role({"name": name, "description": f"{name} role"})
             self.load_roles()
             index = self.role_combo.findData(role.get("id"))
             if index >= 0:
                 self.role_combo.setCurrentIndex(index)
         except ApiError as exc:
             error_dialog(self, "Role", str(exc))
+
+    def _visible_categories(self):
+        categories = sorted(
+            {
+                (permission.get("category") or "General").strip()
+                for permission in self.current_permissions
+                if (permission.get("category") or "General").strip()
+            }
+        )
+        return categories or ["General"]
+
+    def _visible_modules(self):
+        modules = []
+        seen = set()
+        for module in MODULE_KEYS:
+            key = (module or "").strip()
+            if key not in seen:
+                modules.append(key)
+                seen.add(key)
+        for permission in self.current_permissions:
+            key = (permission.get("module_key") or "").strip()
+            if key and key not in seen:
+                modules.append(key)
+                seen.add(key)
+        return modules
 
     @staticmethod
     def _clear_layout(layout):
@@ -499,3 +471,207 @@ class RoleTaskManagementPage(QWidget):
                 widget.deleteLater()
             elif child_layout is not None:
                 RoleTaskManagementPage._clear_layout(child_layout)
+
+
+class RoleDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add a new role")
+        self.setMinimumWidth(380)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Add a new role")
+        title.setObjectName("card_title")
+        layout.addWidget(title)
+
+        self.name_input = QLineEdit()
+        self.name_input.setMinimumHeight(36)
+        self._add_field(layout, "Name of the role", self.name_input)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        set_button_kind(cancel, "outline")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Save Role")
+        set_button_kind(save, "teal")
+        save.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+
+    def accept(self):
+        if not self.role_name():
+            warning_dialog(self, "Validation", "Name of the role is required.")
+            return
+        super().accept()
+
+    def role_name(self):
+        return self.name_input.text().strip()
+
+    def _add_field(self, layout, label, field):
+        field_layout = QVBoxLayout()
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.setSpacing(4)
+        field_layout.addWidget(RoleTaskManagementPage._form_label(label))
+        field_layout.addWidget(field)
+        layout.addLayout(field_layout)
+
+
+class RoleTaskDialog(QDialog):
+    def __init__(self, parent=None, categories=None, modules=None, permission=None, default_module=None):
+        super().__init__(parent)
+        self.permission = permission or {}
+        self.setWindowTitle("Add a new task" if not permission else "Edit Task")
+        self.setMinimumWidth(440)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Add a new task" if not permission else "Edit Task")
+        title.setObjectName("card_title")
+        layout.addWidget(title)
+
+        self.label_input = QLineEdit()
+        self.label_input.setMinimumHeight(36)
+        self.label_input.setText(self.permission.get("label") or "")
+        self._add_field(layout, "Label", self.label_input)
+
+        self.category_combo = QComboBox()
+        self.category_combo.setEditable(True)
+        self.category_combo.setMinimumHeight(36)
+        self.category_combo.addItems(categories or ["General"])
+        self.category_combo.setCurrentText(self.permission.get("category") or "General")
+        self._add_field(layout, "Category", self.category_combo)
+
+        self.key_input = QLineEdit()
+        self.key_input.setMinimumHeight(36)
+        self.key_input.setPlaceholderText("Example: orders approve")
+        self.key_input.setText(self.permission.get("permission_key") or "")
+        self.key_input.setEnabled(not self.permission.get("is_system"))
+        self._add_field(layout, "Permission key", self.key_input)
+
+        self.module_combo = QComboBox()
+        self.module_combo.setEditable(True)
+        self.module_combo.setMinimumHeight(36)
+        self.module_combo.addItems(modules or MODULE_KEYS)
+        module_key = self.permission.get("module_key") or default_module or ""
+        if self.module_combo.findText(module_key) == -1:
+            self.module_combo.addItem(module_key)
+        self.module_combo.setCurrentText(module_key)
+        self._add_field(layout, "Module", self.module_combo)
+
+        add_module = QPushButton("Add another module")
+        set_button_kind(add_module, "outline")
+        add_module.clicked.connect(self.add_module)
+        layout.addWidget(add_module)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        set_button_kind(cancel, "outline")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Save Task")
+        set_button_kind(save, "teal")
+        save.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+
+    def accept(self):
+        if not self.label_input.text().strip():
+            warning_dialog(self, "Validation", "Task label is required.")
+            return
+        if not self.key_input.text().strip():
+            warning_dialog(self, "Validation", "Permission key is required.")
+            return
+        if len(self.key_input.text().strip().split()) > 3:
+            warning_dialog(self, "Validation", "Permission key should be 1 to 3 words.")
+            return
+        super().accept()
+
+    def add_module(self):
+        dialog = ModuleDialog(self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        module_name = dialog.module_name()
+        if self.module_combo.findText(module_name) == -1:
+            self.module_combo.addItem(module_name)
+        self.module_combo.setCurrentText(module_name)
+
+    def payload(self):
+        payload = {
+            "label": self.label_input.text().strip(),
+            "category": self.category_combo.currentText().strip() or "General",
+            "module_key": self.module_combo.currentText().strip() or None,
+            "description": None,
+        }
+        if not self.permission.get("is_system"):
+            payload["permission_key"] = self._permission_key()
+        return payload
+
+    def _permission_key(self):
+        words = [
+            "".join(ch for ch in word.lower() if ch.isalnum() or ch in "_.-").strip("_.-")
+            for word in self.key_input.text().strip().split()
+        ]
+        return ".".join(word for word in words if word)
+
+    def _add_field(self, layout, label, field):
+        field_layout = QVBoxLayout()
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.setSpacing(4)
+        field_layout.addWidget(RoleTaskManagementPage._form_label(label))
+        field_layout.addWidget(field)
+        layout.addLayout(field_layout)
+
+
+class ModuleDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add another module")
+        self.setMinimumWidth(360)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Add another module")
+        title.setObjectName("card_title")
+        layout.addWidget(title)
+
+        self.module_input = QLineEdit()
+        self.module_input.setMinimumHeight(36)
+        self._add_field(layout, "Module name", self.module_input)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        set_button_kind(cancel, "outline")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Add Module")
+        set_button_kind(save, "teal")
+        save.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+
+    def accept(self):
+        if not self.module_name():
+            warning_dialog(self, "Validation", "Module name is required.")
+            return
+        super().accept()
+
+    def module_name(self):
+        return self.module_input.text().strip()
+
+    def _add_field(self, layout, label, field):
+        field_layout = QVBoxLayout()
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.setSpacing(4)
+        field_layout.addWidget(RoleTaskManagementPage._form_label(label))
+        field_layout.addWidget(field)
+        layout.addLayout(field_layout)

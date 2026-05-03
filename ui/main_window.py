@@ -17,7 +17,9 @@ from PyQt5.QtWidgets import (
 from ui.components import ToastManager, error_dialog
 from ui.components.icons import icon
 from ui.modules import MODULE_BY_KEY, allowed_modules, can_access, first_accessible_module
+from ui.settings import apply_saved_user_preferences, reset_application_theme
 from utils.styles import canonical_role, display_role, make_badge, repolish
+from utils.roles import is_super_admin
 from utils.theme import COLORS
 
 
@@ -34,10 +36,14 @@ class MainWindow(QMainWindow):
             item.get("key") if isinstance(item, dict) else str(item)
             for item in self.permissions
         }
+        self._is_super_admin = is_super_admin(self.role)
         self.setWindowTitle("WarehouseIQ Warehouse Management System")
         self.setMinimumSize(1200, 720)
 
         self._nav_buttons = {}
+        self._nav_group_buttons = {}
+        self._nav_group_containers = {}
+        self._nav_group_modules = {}
         self._pages = {}
         self._module_indexes = {}
         self._current_key = None
@@ -48,6 +54,10 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._build_ui()
+        if self._is_super_admin:
+            reset_application_theme()
+        else:
+            apply_saved_user_preferences()
         self.navigate_to(first_accessible_module(self.role, self.permission_keys))
 
     def _build_ui(self):
@@ -65,7 +75,7 @@ class MainWindow(QMainWindow):
 
     def _build_sidebar(self):
         sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
+        sidebar.setObjectName("sidebar_super_admin" if self._is_super_admin else "sidebar")
         sidebar.setFixedWidth(self._sidebar_width)
 
         layout = QVBoxLayout(sidebar)
@@ -81,14 +91,14 @@ class MainWindow(QMainWindow):
 
     def _brand_header(self):
         frame = QFrame()
-        frame.setObjectName("sidebar_brand")
+        frame.setObjectName("sidebar_brand_super_admin" if self._is_super_admin else "sidebar_brand")
         frame.setFixedHeight(68)
         row = QHBoxLayout(frame)
         row.setContentsMargins(16, 0, 12, 0)
         row.setSpacing(8)
 
         self.brand_logo = QLabel("W")
-        self.brand_logo.setObjectName("brand_logo")
+        self.brand_logo.setObjectName("brand_logo_super_admin" if self._is_super_admin else "brand_logo")
         self.brand_logo.setFixedSize(32, 32)
         self.brand_logo.setAlignment(Qt.AlignCenter)
         row.addWidget(self.brand_logo)
@@ -99,14 +109,14 @@ class MainWindow(QMainWindow):
         col.setSpacing(0)
         label = QLabel("WarehouseIQ")
         label.setObjectName("brand_label")
-        accent = QLabel("Management")
-        accent.setObjectName("brand_accent")
+        accent = QLabel("Command Center" if self._is_super_admin else "Management")
+        accent.setObjectName("brand_accent_super_admin" if self._is_super_admin else "brand_accent")
         col.addWidget(label)
         col.addWidget(accent)
         row.addWidget(self.brand_text, 1)
 
         toggle = QToolButton()
-        toggle.setObjectName("nav_button")
+        toggle.setObjectName("nav_button_super" if self._is_super_admin else "nav_button")
         toggle.setIcon(icon("fa5s.bars", COLORS["white"]))
         toggle.setCursor(Qt.PointingHandCursor)
         toggle.clicked.connect(self.toggle_sidebar)
@@ -115,13 +125,13 @@ class MainWindow(QMainWindow):
 
     def _profile_card(self):
         frame = QFrame()
-        frame.setObjectName("sidebar_profile")
+        frame.setObjectName("sidebar_profile_super_admin" if self._is_super_admin else "sidebar_profile")
         row = QHBoxLayout(frame)
         row.setContentsMargins(16, 16, 16, 16)
         row.setSpacing(10)
 
         avatar = QLabel(self._initials(self.display_name))
-        avatar.setObjectName("user_avatar")
+        avatar.setObjectName("user_avatar_super_admin" if self._is_super_admin else "user_avatar")
         avatar.setAlignment(Qt.AlignCenter)
         avatar.setFixedSize(40, 40)
         row.addWidget(avatar)
@@ -132,7 +142,7 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(0, 0, 0, 0)
         name_lbl = QLabel(self.display_name)
         name_lbl.setObjectName("profile_name")
-        tone = {"Super Admin": "red", "Admin": "navy", "Cashier": "blue", "Warehouseman": "amber", "Bookkeeper": "teal"}.get(self.role, "gray")
+        tone = {"Super Admin": "super_admin", "Admin": "navy", "Cashier": "blue", "Warehouseman": "amber", "Bookkeeper": "teal"}.get(self.role, "gray")
         col.addWidget(name_lbl)
         col.addWidget(make_badge(display_role(self.role), tone))
         row.addWidget(self.profile_text, 1)
@@ -157,26 +167,88 @@ class MainWindow(QMainWindow):
         return scroll
 
     def _populate_nav(self):
+        modules = allowed_modules(self.role, self.permission_keys)
+        if self._is_super_admin:
+            self._populate_super_admin_nav(modules)
+            return
+
         last_group = None
-        for module in allowed_modules(self.role, self.permission_keys):
+        settings_module = MODULE_BY_KEY.get("settings")
+        settings_accessible = settings_module and can_access(self.role, "settings", self.permission_keys)
+        visible_modules = [module for module in modules if module.key != "settings"]
+        for index, module in enumerate(visible_modules):
             if module.group != last_group:
+                if last_group is not None and settings_accessible:
+                    self._nav_vbox.addWidget(self._nav_button(settings_module))
                 label = QLabel(module.group.upper())
                 label.setObjectName("nav_section_label")
                 label.setContentsMargins(10, 8 if last_group else 4, 0, 2)
                 self._nav_vbox.addWidget(label)
                 last_group = module.group
-            btn = QToolButton()
-            btn.setObjectName("nav_button")
-            btn.setMinimumHeight(36)
-            btn.setIconSize(QSize(16, 16))
-            btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            btn.setIcon(icon(module.icon, COLORS["muted"]))
-            btn.setText(module.label)
-            btn.setToolTip(module.label)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked=False, key=module.key: self.navigate_to(key))
-            self._nav_vbox.addWidget(btn)
-            self._nav_buttons[module.key] = btn
+            self._nav_vbox.addWidget(self._nav_button(module))
+            if index == len(visible_modules) - 1 and settings_accessible:
+                self._nav_vbox.addWidget(self._nav_button(settings_module))
+
+        if not visible_modules and settings_accessible:
+            label = QLabel("SYSTEM")
+            label.setObjectName("nav_section_label")
+            label.setContentsMargins(10, 4, 0, 2)
+            self._nav_vbox.addWidget(label)
+            self._nav_vbox.addWidget(self._nav_button(settings_module))
+
+    def _populate_super_admin_nav(self, modules):
+        grouped = {}
+        for module in modules:
+            grouped.setdefault(module.group, []).append(module)
+
+        for group, rows in grouped.items():
+            parent = QToolButton()
+            parent.setObjectName("nav_parent_super")
+            parent.setMinimumHeight(38)
+            parent.setArrowType(Qt.RightArrow)
+            parent.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            parent.setText(group)
+            parent.setToolTip(group)
+            parent.setCursor(Qt.PointingHandCursor)
+            parent.clicked.connect(lambda checked=False, name=group: self._toggle_nav_group(name))
+            self._nav_vbox.addWidget(parent)
+            self._nav_group_buttons[group] = parent
+            self._nav_group_modules[group] = {module.key for module in rows}
+
+            container = QWidget()
+            container.setObjectName("sidebar_nav_group")
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(14, 0, 0, 4)
+            container_layout.setSpacing(4)
+            for module in rows:
+                container_layout.addWidget(self._nav_button(module, super_admin=True))
+            container.setVisible(False)
+            self._nav_vbox.addWidget(container)
+            self._nav_group_containers[group] = container
+
+    def _nav_button(self, module, super_admin=False):
+        btn = QToolButton()
+        btn.setObjectName("nav_button_super" if super_admin else "nav_button")
+        btn.setMinimumHeight(36)
+        btn.setIconSize(QSize(16, 16))
+        btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        btn.setIcon(icon(module.icon, COLORS["muted"]))
+        btn.setText(module.label)
+        btn.setToolTip(module.label)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda checked=False, key=module.key: self.navigate_to(key))
+        self._nav_buttons.setdefault(module.key, []).append(btn)
+        return btn
+
+    def _toggle_nav_group(self, group):
+        container = self._nav_group_containers.get(group)
+        button = self._nav_group_buttons.get(group)
+        if not container or not button:
+            return
+        is_expanded = not container.isVisible()
+        container.setVisible(is_expanded)
+        button.setArrowType(Qt.DownArrow if is_expanded else Qt.RightArrow)
+        self._update_active_nav()
 
     def _logout_btn(self):
         btn = QPushButton("Sign Out")
@@ -234,12 +306,27 @@ class MainWindow(QMainWindow):
         return page
 
     def _update_active_nav(self):
-        for key, button in self._nav_buttons.items():
+        for key, buttons in self._nav_buttons.items():
             is_active = key == self._current_key
-            button.setObjectName("nav_button_active" if is_active else "nav_button")
             module = MODULE_BY_KEY[key]
             color = COLORS["white"] if is_active else COLORS["muted"]
-            button.setIcon(icon(module.icon, color))
+            object_name = "nav_button_active" if is_active else "nav_button"
+            if self._is_super_admin:
+                object_name = "nav_button_super_active" if is_active else "nav_button_super"
+            for button in buttons:
+                button.setObjectName(object_name)
+                button.setIcon(icon(module.icon, color))
+                repolish(button)
+
+        for group, button in self._nav_group_buttons.items():
+            container = self._nav_group_containers.get(group)
+            group_is_active = self._current_key in self._nav_group_modules.get(group, set())
+            if group_is_active:
+                button.setObjectName("nav_parent_super_active")
+            elif container and container.isVisible():
+                button.setObjectName("nav_parent_super_expanded")
+            else:
+                button.setObjectName("nav_parent_super")
             repolish(button)
 
     def toggle_sidebar(self):
@@ -254,7 +341,10 @@ class MainWindow(QMainWindow):
         self.sidebar.setMaximumWidth(target)
         self.brand_text.setVisible(not self._collapsed)
         self.profile_text.setVisible(not self._collapsed)
-        for btn in self._nav_buttons.values():
+        for buttons in self._nav_buttons.values():
+            for btn in buttons:
+                btn.setToolButtonStyle(Qt.ToolButtonIconOnly if self._collapsed else Qt.ToolButtonTextBesideIcon)
+        for btn in self._nav_group_buttons.values():
             btn.setToolButtonStyle(Qt.ToolButtonIconOnly if self._collapsed else Qt.ToolButtonTextBesideIcon)
 
     @staticmethod
