@@ -225,6 +225,17 @@ def restock_inventory_item(item_id, amount):
     return _request("POST", f"/inventory/{item_id}/restock", {"amount": amount})
 
 
+def receive_stock_grn(item_id, supplier_name, quantity_received, condition="Good", date_received=None, notes=None):
+    return _request("POST", "/inventory/grn", {
+        "item_id": item_id,
+        "supplier_name": supplier_name,
+        "quantity_received": quantity_received,
+        "condition": condition,
+        "date_received": date_received,
+        "notes": notes,
+    })
+
+
 def stock_out_inventory_item(item_id, amount):
     return _request("POST", f"/inventory/{item_id}/stock-out", {"amount": amount})
 
@@ -368,3 +379,9 @@ def get_orders_report(date_from=None, date_to=None):
 
 def get_payments_report(date_from=None, date_to=None):
     return _request("GET", "/reports/payments", params={"date_from": date_from, "date_to": date_to})
+
+def get_stock_movements(item_id):
+    return _request("GET", f"/inventory/{item_id}/movements")
+
+def get_all_stock_movements():
+    return _request("GET", "/stock-movements")

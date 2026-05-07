@@ -243,9 +243,10 @@ class DashboardPage(QWidget):
         if widgets.get("inventory"):
             cards.extend([
                 ("Total Products", stats.get("total_products") or 0, "navy", self._first_allowed(("products", "products.view"), ("inventory", "inventory.view"))),
-                ("Total Stock Quantity", stats.get("total_stock_quantity") or 0, "teal", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+                ("Total Stock Qty", stats.get("total_stock_quantity") or 0, "teal", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+                ("Stock Value", format_currency(stats.get("total_stock_value") or 0), "teal", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
                 ("Low Stock Items", stats.get("low_stock_items") or 0, "amber", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
-                ("Out of Stock Items", stats.get("out_of_stock_items") or 0, "red", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
+                ("Out of Stock", stats.get("out_of_stock_items") or 0, "red", self._first_allowed(("inventory", "inventory.view"), ("products", "products.view"))),
             ])
         if widgets.get("sales"):
             cards.extend([

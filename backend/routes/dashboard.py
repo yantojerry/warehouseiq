@@ -60,7 +60,8 @@ def get_dashboard_overview(request: Request):
                 SELECT COUNT(*) AS total_products,
                        COALESCE(SUM(quantity), 0) AS total_stock_quantity,
                        SUM(CASE WHEN quantity > 0 AND quantity <= low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_items,
-                       SUM(CASE WHEN quantity <= 0 THEN 1 ELSE 0 END) AS out_of_stock_items
+                       SUM(CASE WHEN quantity <= 0 THEN 1 ELSE 0 END) AS out_of_stock_items,
+                       COALESCE(SUM(quantity * unit_price), 0) AS total_stock_value
                 FROM inventory
                 WHERE is_active = 1
                 """

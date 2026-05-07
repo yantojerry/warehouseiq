@@ -444,6 +444,22 @@ def _ensure_schema(connection):
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                item_name TEXT NOT NULL,
+                quantity_change INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                reference TEXT,
+                actor TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (item_id) REFERENCES inventory(id)
+            )
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(item_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_hash ON user_sessions(token_hash)")
         cursor.execute(

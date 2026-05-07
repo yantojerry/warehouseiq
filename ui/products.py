@@ -541,13 +541,14 @@ class ProductDialog(QDialog):
         btn_pick = QPushButton("Choose Image")
         set_button_kind(btn_pick, "outline")
         btn_pick.clicked.connect(self._pick_image)
-        btn_clear = QPushButton("Remove")
-        set_button_kind(btn_clear, "danger")
-        btn_clear.clicked.connect(self._clear_image)
+        self.btn_clear = QPushButton("Remove")
+        set_button_kind(self.btn_clear, "danger")
+        self.btn_clear.clicked.connect(self._clear_image)
+        self.btn_clear.setVisible(False)
         img_hint = QLabel("PNG, JPG or JPEG - max 2MB")
         img_hint.setObjectName("stat_label")
         img_btn_col.addWidget(btn_pick)
-        img_btn_col.addWidget(btn_clear)
+        img_btn_col.addWidget(self.btn_clear)
         img_btn_col.addWidget(img_hint)
         img_layout.addLayout(img_btn_col)
         layout.addWidget(img_frame)
@@ -600,6 +601,7 @@ class ProductDialog(QDialog):
         pix = QPixmap(path).scaled(80, 70, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.img_preview.setPixmap(pix)
         self.img_preview.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+        self.btn_clear.setVisible(True)
 
     def _clear_image(self):
         self._image_b64 = None
@@ -608,6 +610,7 @@ class ProductDialog(QDialog):
         self.img_preview.setStyleSheet(
             f"background:{COLORS['surface']}; border-radius:8px; color:{COLORS['muted']}; font-size:11px;"
         )
+        self.btn_clear.setVisible(False)
 
     def _load_data(self):
         try:
@@ -635,6 +638,7 @@ class ProductDialog(QDialog):
                 pix.loadFromData(base64.b64decode(img_data))
                 self.img_preview.setPixmap(pix.scaled(80, 70, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                 self.img_preview.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+                self.btn_clear.setVisible(True)
             except Exception:
                 pass
 

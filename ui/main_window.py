@@ -26,7 +26,7 @@ from utils.theme import COLORS
 class MainWindow(QMainWindow):
     logout_requested = pyqtSignal()
 
-    def __init__(self, username=None, role=None, display_name=None, permissions=None):
+    def __init__(self, username=None, role=None, display_name=None, permissions=None, low_stock_count=0):
         super().__init__()
         self.username = username or "User"
         self.display_name = display_name or self.username
@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         self._sidebar_width = 232
         self._sidebar_collapsed_width = 68
         self.toast = ToastManager(self)
+        self._low_stock_count = low_stock_count
 
         self._stack = QStackedWidget()
         self._build_ui()
@@ -233,7 +234,12 @@ class MainWindow(QMainWindow):
         btn.setIconSize(QSize(16, 16))
         btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         btn.setIcon(icon(module.icon, COLORS["muted"]))
-        btn.setText(module.label)
+
+        label = module.label
+        if module.key == "inventory" and self._low_stock_count > 0:
+            label = f"{module.label}  🔴 {self._low_stock_count}"
+
+        btn.setText(label)
         btn.setToolTip(module.label)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda checked=False, key=module.key: self.navigate_to(key))
@@ -355,3 +361,11 @@ class MainWindow(QMainWindow):
         if len(parts) == 1:
             return parts[0][:2].upper()
         return (parts[0][0] + parts[-1][0]).upper()
+
+    def update_low_stock_badge(self, count):
+        self._low_stock_count = count
+        for btn in self._nav_buttons.get("inventory", []):
+            label = "Inventory"
+            if count > 0:
+                label = f"Inventory  🔴 {count}"
+            btn.setText(label)

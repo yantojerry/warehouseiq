@@ -8,11 +8,13 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from ui.components import error_dialog, info_dialog, warning_dialog
-from utils.api_client import ApiError, register, login as api_login
+from utils.api_client import ApiError, list_inventory, register, login as api_login
 from utils.styles import APP_THEME, canonical_role, set_button_kind
 
 
@@ -137,6 +139,7 @@ class LoginPage(QDialog):
         self.authenticated_role = None
         self.authenticated_permissions = []
         self.authenticated_user_id = None
+        self.low_stock_count = 0
         self._has_centered_on_show = False
         self._build_ui()
         self.setStyleSheet(APP_THEME)
@@ -250,6 +253,22 @@ class LoginPage(QDialog):
     def _open_forgot_password_dialog(self):
         ForgotPasswordDialog(self).exec_()
 
+    def _show_low_stock_alert(self):
+        try:
+            items = list_inventory() or []
+            low_items = [
+                item for item in items
+                if item.get("is_active", 1)
+                and item.get("quantity", 0) <= item.get("low_stock_threshold", 0)
+            ]
+            self.low_stock_count = len(low_items)
+            if not low_items:
+                return
+            dlg = LowStockAlertDialog(low_items, parent=None)
+            dlg.exec_()
+        except Exception:
+            self.low_stock_count = 0
+
     def closeEvent(self, event):
         event.accept()
         QApplication.quit()
@@ -277,6 +296,124 @@ class LoginPage(QDialog):
         self.authenticated_permissions = user.get("permissions") or []
         self.login_success.emit()
         self.accept()
+        if role == "Warehouseman":
+            self._show_low_stock_alert()
 
+class LowStockAlertDialog(QDialog):
+    def __init__(self, low_stock_items, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Low Stock Alert")
+        self.setFixedSize(480, 420)
+        self.setAttribute(Qt.WA_StyledBackground)
+        self._build_ui(low_stock_items)
+        self.setStyleSheet(APP_THEME)
+
+    def _build_ui(self, items):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        # Header
+        header_row = QHBoxLayout()
+        warning_icon = QLabel("⚠")
+        warning_icon.setStyleSheet("font-size: 22px; color: #E8A020;")
+        header_row.addWidget(warning_icon)
+        title = QLabel("Low Stock Warning")
+        title.setObjectName("login_title")
+        title.setStyleSheet("font-size: 17px; font-weight: 600; margin-left: 6px;")
+        header_row.addWidget(title)
+        header_row.addStretch()
+        layout.addLayout(header_row)
+
+        subtitle = QLabel(f"{len(items)} item(s) are low or critical and need restocking.")
+        subtitle.setObjectName("login_subtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        # Divider
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setStyleSheet("color: #E0E0E0;")
+        layout.addWidget(divider)
+
+        # Items list
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background: transparent;")
+
+        items_widget = QWidget()
+        items_widget.setStyleSheet("background: transparent;")
+        items_layout = QVBoxLayout(items_widget)
+        items_layout.setContentsMargins(0, 4, 0, 4)
+        items_layout.setSpacing(6)
+
+        for item in items:
+            row = QFrame()
+            qty = item.get("quantity", 0)
+            threshold = item.get("low_stock_threshold", 0)
+            is_critical = qty == 0
+            is_low = qty <= threshold
+
+            if is_critical:
+                row.setStyleSheet("""
+                    QFrame { background: #FEF2F2; border: 1px solid #FECACA;
+                             border-radius: 8px; padding: 2px; }
+                """)
+            else:
+                row.setStyleSheet("""
+                    QFrame { background: #FFFBEB; border: 1px solid #FDE68A;
+                             border-radius: 8px; padding: 2px; }
+                """)
+
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(12, 8, 12, 8)
+            row_layout.setSpacing(8)
+
+            name_col = QVBoxLayout()
+            name_col.setSpacing(2)
+            name_lbl = QLabel(item.get("item_name", "Unknown"))
+            name_lbl.setStyleSheet("font-weight: 600; font-size: 13px; color: #1a1a1a;")
+            floor_lbl = QLabel(f"Floor {item.get('floor', '?')}  ·  {item.get('category', '')}")
+            floor_lbl.setStyleSheet("font-size: 11px; color: #666;")
+            name_col.addWidget(name_lbl)
+            name_col.addWidget(floor_lbl)
+            row_layout.addLayout(name_col, 1)
+
+            status_col = QVBoxLayout()
+            status_col.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            qty_lbl = QLabel(f"{'Out of stock' if is_critical else f'{qty} left'}")
+            qty_lbl.setStyleSheet(f"font-weight: 700; font-size: 13px; color: {'#DC2626' if is_critical else '#D97706'};")
+            min_lbl = QLabel(f"Min: {threshold}")
+            min_lbl.setStyleSheet("font-size: 11px; color: #888;")
+            qty_lbl.setAlignment(Qt.AlignRight)
+            min_lbl.setAlignment(Qt.AlignRight)
+            status_col.addWidget(qty_lbl)
+            status_col.addWidget(min_lbl)
+            row_layout.addLayout(status_col)
+
+            items_layout.addWidget(row)
+
+        scroll.setWidget(items_widget)
+        layout.addWidget(scroll, 1)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        dismiss_btn = QPushButton("Dismiss")
+        dismiss_btn.setFixedHeight(40)
+        set_button_kind(dismiss_btn, "ghost")
+        dismiss_btn.clicked.connect(self.reject)
+
+        view_btn = QPushButton("View Items →")
+        view_btn.setFixedHeight(40)
+        set_button_kind(view_btn, "teal")
+        view_btn.clicked.connect(self.accept)
+
+        btn_row.addWidget(dismiss_btn)
+        btn_row.addWidget(view_btn)
+        layout.addLayout(btn_row)
 
 __all__ = ["LoginPage", "CreateAccountDialog", "ForgotPasswordDialog"]

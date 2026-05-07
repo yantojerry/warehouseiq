@@ -220,9 +220,23 @@ class DispatchPage(QWidget):
     def _render_dispatches(self, orders):
         self._clear_layout(self.dispatch_layout)
         if not orders:
-            empty = QLabel("No pending dispatches.")
-            empty.setStyleSheet(f"background: transparent; color: {COLORS['text_3']};")
-            self.dispatch_layout.addWidget(empty)
+            empty_widget = QWidget()
+            empty_layout = QVBoxLayout(empty_widget)
+            empty_layout.setContentsMargins(20, 40, 20, 40)
+            empty_layout.setSpacing(8)
+            icon_lbl = QLabel("📦")
+            icon_lbl.setAlignment(Qt.AlignCenter)
+            icon_lbl.setStyleSheet("font-size: 36px; background: transparent;")
+            msg = QLabel("No pending dispatches")
+            msg.setAlignment(Qt.AlignCenter)
+            msg.setStyleSheet(f"background: transparent; color: {COLORS['text_3']}; font-size: 14px; font-weight: 600;")
+            sub = QLabel("All orders have been processed")
+            sub.setAlignment(Qt.AlignCenter)
+            sub.setStyleSheet(f"background: transparent; color: {COLORS['text_3']}; font-size: 12px;")
+            empty_layout.addWidget(icon_lbl)
+            empty_layout.addWidget(msg)
+            empty_layout.addWidget(sub)
+            self.dispatch_layout.addWidget(empty_widget)
             self.dispatch_layout.addStretch()
             return
 
@@ -277,17 +291,43 @@ class DispatchPage(QWidget):
         table.setMaximumHeight(180)
         for row_index, item in enumerate(items):
             available = self._available_stock(item.get("item_name"), item.get("floor"))
+            order_qty = int(item.get("quantity") or 0)
+            remaining_after = available - order_qty
+            status = stock_status(available, 5)
             values = [
                 item.get("item_name") or "-",
-                str(item.get("quantity") or 0),
+                str(order_qty),
                 f"F{item.get('floor')}",
                 str(available),
             ]
             for col, value in enumerate(values):
-                color = stock_color(stock_status(available, 5)) if col == 3 else None
+                color = stock_color(status) if col == 3 else None
                 table.setItem(row_index, col, table_item(value, mono=col > 0, bold=col > 0, color=color))
-            table.setCellWidget(row_index, 4, self._pick_buttons(order["id"], item))
-            table.setRowHeight(row_index, 38)
+
+            # Warning widget for low stock
+            if status in ("Low", "Critical") or remaining_after <= 0:
+                warn_widget = QWidget()
+                warn_widget.setStyleSheet("background: transparent;")
+                warn_layout = QVBoxLayout(warn_widget)
+                warn_layout.setContentsMargins(4, 2, 4, 2)
+                warn_layout.setSpacing(3)
+                if remaining_after <= 0:
+                    warn_label = QLabel("⚠ Out of stock after this order")
+                    warn_label.setStyleSheet("color: #DC2626; font-size: 10px; font-weight: 600; background: transparent;")
+                else:
+                    warn_label = QLabel(f"⚠ Only {remaining_after} left after")
+                    warn_label.setStyleSheet("color: #D97706; font-size: 10px; font-weight: 600; background: transparent;")
+                warn_layout.addWidget(warn_label)
+                # Still show pick buttons below the warning
+                pick_widget = self._pick_buttons(order["id"], item)
+                warn_layout.addWidget(pick_widget)
+                table.setCellWidget(row_index, 4, warn_widget)
+            else:
+                table.setCellWidget(row_index, 4, self._pick_buttons(order["id"], item))
+            if status in ("Low", "Critical") or remaining_after <= 0:
+                table.setRowHeight(row_index, 56)
+            else:
+                table.setRowHeight(row_index, 38)
         layout.addWidget(table)
 
         layout.addLayout(self._floor_grid(items))

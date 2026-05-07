@@ -467,11 +467,12 @@ QComboBox QAbstractItemView {{
 }}
 
 QLabel#form_label {{
-    color: {COLORS["text_3"]};
+    color: {COLORS["navy"]};
     background: transparent;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.5px;
+    text-transform: uppercase;
 }}
 
 QTableWidget {{
@@ -532,10 +533,17 @@ QLabel#badge_green, QLabel#badge_gray, QLabel#badge_blue, QLabel#badge_super_adm
 }}
 
 #login_title {{
-    color: {COLORS["text"]};
+    color: {COLORS["navy"]};
     background: transparent;
     font-size: 22px;
     font-weight: 800;
+}}
+
+#dialog_accent {{
+    background-color: {COLORS["navy"]};
+    border-radius: 0px;
+    min-height: 5px;
+    max-height: 5px;
 }}
 
 #login_subtitle {{
@@ -794,6 +802,7 @@ def configure_table(table):
     table.setWordWrap(False)
     table.verticalHeader().setDefaultSectionSize(42)
     table.horizontalHeader().setHighlightSections(False)
+    table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
 
 def table_item(text, align=None, mono=False, bold=False, color=None):

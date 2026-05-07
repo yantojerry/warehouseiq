@@ -4,6 +4,7 @@ import os
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -30,7 +31,9 @@ from utils.api_client import (
     create_inventory_item,
     delete_inventory_item,
     get_inventory_item,
+    get_all_stock_movements,
     list_inventory,
+    receive_stock_grn,
     restock_inventory_item,
     stock_out_inventory_item,
     update_inventory_item,
@@ -65,9 +68,10 @@ PRODUCT_CATEGORIES = [
 
 
 class InventoryPage(QWidget):
-    def __init__(self, permissions=None):
+    def __init__(self, permissions=None, navigate_callback=None):
         super().__init__()
         self.permissions = set(permissions or ())
+        self._navigate_callback = navigate_callback
         self.setObjectName("content_area")
         self.selected_floor = None
         self.selected_category = "All Categories"
@@ -119,7 +123,20 @@ class InventoryPage(QWidget):
         self.low_alert_label = QLabel("")
         self.low_alert_label.setObjectName("alert_text_red")
         self.low_alert_label.setWordWrap(True)
-        alert_layout.addWidget(self.low_alert_label)
+        alert_layout.addWidget(self.low_alert_label, 1)
+        self.btn_reorder = QPushButton("Reorder Now")
+        self.btn_reorder.setFixedHeight(30)
+        self.btn_reorder.setFixedWidth(110)
+        self.btn_reorder.setStyleSheet("""
+            QPushButton {
+                background: #DC2626; color: white; border-radius: 6px;
+                font-weight: 600; font-size: 12px; border: none;
+            }
+            QPushButton:hover { background: #B91C1C; }
+        """)
+        self.btn_reorder.setCursor(Qt.PointingHandCursor)
+        self.btn_reorder.clicked.connect(self._scroll_to_low_stock)
+        alert_layout.addWidget(self.btn_reorder)
         page.addWidget(self.low_alert)
 
         # Body
@@ -188,10 +205,23 @@ class InventoryPage(QWidget):
         header_layout.setContentsMargins(18, 13, 18, 13)
         header_layout.setSpacing(8)
 
-        card_title = QLabel("Stock Ledger")
-        card_title.setObjectName("card_title")
-        header_layout.addWidget(card_title)
+        # Tab buttons
+        self.btn_tab_ledger = QPushButton("Stock Ledger")
+        self.btn_tab_ledger.setObjectName("pill_button_selected")
+        self.btn_tab_ledger.setFixedHeight(30)
+        self.btn_tab_ledger.setCursor(Qt.PointingHandCursor)
+        self.btn_tab_ledger.clicked.connect(lambda: self._set_tab("ledger"))
+        header_layout.addWidget(self.btn_tab_ledger)
+
+        self.btn_tab_movements = QPushButton("Stock Movement Log")
+        self.btn_tab_movements.setObjectName("pill_button")
+        self.btn_tab_movements.setFixedHeight(30)
+        self.btn_tab_movements.setCursor(Qt.PointingHandCursor)
+        self.btn_tab_movements.clicked.connect(lambda: self._set_tab("movements"))
+        header_layout.addWidget(self.btn_tab_movements)
+
         header_layout.addStretch()
+        self._current_tab = "ledger"
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search item name or code...")
@@ -224,6 +254,12 @@ class InventoryPage(QWidget):
             btn_add.clicked.connect(self.open_add_dialog)
             header_layout.addWidget(btn_add)
 
+        if self._can("inventory.update_stock"):
+            btn_grn = QPushButton("Receive Stock")
+            set_button_kind(btn_grn, "teal")
+            btn_grn.clicked.connect(self.open_grn_dialog)
+            header_layout.addWidget(btn_grn)
+
         main_layout.addWidget(card_header)
 
         # List view
@@ -237,7 +273,7 @@ class InventoryPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.table.setColumnWidth(0, 64)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
-        self.table.setColumnWidth(7, 280)
+        self.table.setColumnWidth(7, 330)
         configure_table(self.table)
         self.table.setMinimumHeight(430)
         main_layout.addWidget(self.table)
@@ -255,6 +291,26 @@ class InventoryPage(QWidget):
         self.grid_scroll.setWidget(self.grid_container)
         self.grid_scroll.hide()
         main_layout.addWidget(self.grid_scroll)
+
+        # Stock Movement Log table
+        self.movement_table = QTableWidget()
+        self.movement_table.setColumnCount(7)
+        self.movement_table.setHorizontalHeaderLabels([
+            "DATE", "ITEM", "CATEGORY", "FLOOR",
+            "CHANGE", "REASON", "ACTOR",
+        ])
+        self.movement_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        configure_table(self.movement_table)
+        self.movement_table.setMinimumHeight(430)
+        self.movement_table.hide()
+        main_layout.addWidget(self.movement_table)
+
+        # Refresh button for movement log
+        self.btn_refresh_movements = QPushButton("Refresh Log")
+        set_button_kind(self.btn_refresh_movements, "outline")
+        self.btn_refresh_movements.clicked.connect(self.load_movements)
+        self.btn_refresh_movements.hide()
+        main_layout.addWidget(self.btn_refresh_movements)
 
         body.addWidget(card, 1)
         self._update_floor_buttons()
@@ -337,14 +393,146 @@ class InventoryPage(QWidget):
         )
         self.low_alert.setVisible(low_count > 0)
         self.low_alert_label.setText(f"{low_count} item(s) are low or critical in the current view.")
+        self._update_sidebar_badge(low_count)
 
         if self._view_mode == "list":
             self._load_list_view(rows)
         else:
             self._load_grid_view(rows)
 
+    def _update_sidebar_badge(self, count):
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "update_low_stock_badge"):
+                parent.update_low_stock_badge(count)
+                return
+            parent = parent.parent()
+
+    def _scroll_to_low_stock(self):
+        for row in range(self.table.rowCount()):
+            qty_item = self.table.item(row, 4)
+            min_item = self.table.item(row, 5)
+            if qty_item and min_item:
+                try:
+                    qty = int(qty_item.text())
+                    minimum = int(min_item.text())
+                    if qty <= minimum:
+                        self.table.setCurrentCell(row, 1)
+                        self.table.scrollToItem(
+                            self.table.item(row, 1),
+                            QAbstractItemView.PositionAtTop
+                        )
+                        self.table.selectRow(row)
+                        return
+                except ValueError:
+                    continue
+
+    def _set_tab(self, tab):
+        self._current_tab = tab
+        is_ledger = tab == "ledger"
+
+        # Toggle tab button styles
+        self.btn_tab_ledger.setObjectName(
+            "pill_button_selected" if is_ledger else "pill_button"
+        )
+        self.btn_tab_movements.setObjectName(
+            "pill_button_selected" if not is_ledger else "pill_button"
+        )
+        repolish(self.btn_tab_ledger)
+        repolish(self.btn_tab_movements)
+
+        # Toggle visibility
+        self.table.setVisible(is_ledger)
+        self.grid_scroll.setVisible(False)
+        self.movement_table.setVisible(not is_ledger)
+        self.btn_refresh_movements.setVisible(not is_ledger)
+
+        # Toggle search/filter/sort visibility
+        self.search_input.setVisible(is_ledger)
+        self.btn_list_view.setVisible(is_ledger)
+        self.btn_grid_view.setVisible(is_ledger)
+
+        if not is_ledger:
+            self.load_movements()
+
+    def load_movements(self):
+        try:
+            movements = get_all_stock_movements()
+        except ApiError:
+            movements = []
+
+        self.movement_table.setRowCount(len(movements))
+
+        if not movements:
+            self.movement_table.setRowCount(1)
+            empty = QLabel("📋  No stock movements recorded yet.")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet(f"color: {COLORS['text_3']}; font-size: 13px; background: transparent; padding: 20px;")
+            self.movement_table.setCellWidget(0, 0, empty)
+            self.movement_table.setSpan(0, 0, 1, 7)
+            self.movement_table.setRowHeight(0, 80)
+            return
+
+        for i, m in enumerate(movements):
+            change = int(m.get("quantity_change", 0))
+            change_str = f"+{change}" if change > 0 else str(change)
+            change_color = "#16a34a" if change > 0 else "#dc2626"
+
+            raw_date = m.get("created_at", "")[:16].replace("T", " ")
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(raw_date, "%Y-%m-%d %H:%M")
+                formatted_date = dt.strftime("%b %d, %H:%M")
+            except Exception:
+                formatted_date = raw_date
+
+            reason = m.get("reason", "") or ""
+            reason_lower = reason.lower()
+            if reason_lower.startswith("grn"):
+                reason_tone = "teal"
+            elif reason_lower.startswith("return"):
+                reason_tone = "blue"
+            elif reason_lower == "stock out":
+                reason_tone = "red"
+            elif reason_lower == "restocked":
+                reason_tone = "green"
+            else:
+                reason_tone = "gray"
+
+            text_cols = [
+                formatted_date,
+                m.get("item_name", ""),
+                m.get("category", "") or "Other",
+                f"F{m.get('floor', '')}",
+                change_str,
+            ]
+            for col, value in enumerate(text_cols):
+                item = table_item(
+                    value,
+                    color=change_color if col == 4 else None,
+                    bold=col == 4
+                )
+                self.movement_table.setItem(i, col, item)
+
+            # Reason badge (col 5)
+            self.movement_table.setCellWidget(i, 5, make_badge(reason or "—", reason_tone))
+
+            # Actor (col 6)
+            self.movement_table.setItem(i, 6, table_item(m.get("actor", "system") or "system"))
+            self.movement_table.setRowHeight(i, 44)
+
     def _load_list_view(self, rows):
         self.table.setRowCount(len(rows))
+
+        if not rows:
+            self.table.setRowCount(1)
+            empty_lbl = QLabel("🗂️  No inventory items found. Add your first item using  \"+ Add Item\".")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            empty_lbl.setStyleSheet(f"color: {COLORS['text_3']}; font-size: 13px; background: transparent; padding: 24px;")
+            self.table.setCellWidget(0, 0, empty_lbl)
+            self.table.setSpan(0, 0, 1, 8)
+            self.table.setRowHeight(0, 100)
+            return
         for i, row in enumerate(rows):
             item_id = row["id"]
             status = stock_status(int(row["quantity"]), int(row["low_stock_threshold"]))
@@ -480,28 +668,33 @@ class InventoryPage(QWidget):
         layout.setSpacing(4)
 
         if self._can("inventory.edit"):
+            btn_history = QPushButton("History")
+            btn_history.setFixedSize(72, 28)
+            set_button_kind(btn_history, "outline")
+            btn_history.clicked.connect(lambda _, rid=item_id: self.open_history_dialog(rid))
+            layout.addWidget(btn_history)
             btn_edit = QPushButton("Edit")
-            btn_edit.setFixedSize(52, 28)
+            btn_edit.setFixedSize(56, 28)
             set_button_kind(btn_edit, "outline")
             btn_edit.clicked.connect(lambda _, rid=item_id: self.open_edit_dialog(rid))
             layout.addWidget(btn_edit)
 
         if self._can("inventory.update_stock"):
             btn_restock = QPushButton("Restock")
-            btn_restock.setFixedSize(68, 28)
+            btn_restock.setFixedSize(72, 28)
             set_button_kind(btn_restock, "teal")
             btn_restock.clicked.connect(lambda _, rid=item_id: self.open_restock_dialog(rid))
             layout.addWidget(btn_restock)
 
             btn_out = QPushButton("Stock Out")
-            btn_out.setFixedSize(76, 28)
+            btn_out.setFixedSize(84, 28)
             set_button_kind(btn_out, "warning")
             btn_out.setEnabled(quantity > 0)
             btn_out.clicked.connect(lambda _, rid=item_id: self.open_stock_out_dialog(rid))
             layout.addWidget(btn_out)
 
         if self._can("inventory.delete"):
-            btn_del = QPushButton("X")
+            btn_del = QPushButton("✕")
             btn_del.setFixedSize(28, 28)
             set_button_kind(btn_del, "danger")
             btn_del.clicked.connect(lambda _, rid=item_id: self._confirm_delete(rid, ""))
@@ -539,6 +732,143 @@ class InventoryPage(QWidget):
         dialog = StockOutDialog(self, item_id=item_id)
         if dialog.exec_():
             self.load_inventory()
+
+    def open_history_dialog(self, item_id):
+        dialog = ItemHistoryDialog(self, item_id=item_id)
+        dialog.exec_()
+
+    def open_grn_dialog(self):
+        dialog = ReceiveStockDialog(self)
+        if dialog.exec_():
+            self._reload_all()
+            if self._current_tab == "movements":
+                self.load_movements()
+
+def _dialog_accent_bar():
+    bar = QFrame()
+    bar.setObjectName("dialog_accent")
+    bar.setFixedHeight(5)
+    return bar
+
+
+class ReceiveStockDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Receive Stock — GRN")
+        self.setMinimumWidth(460)
+        self.setAttribute(Qt.WA_StyledBackground)
+        self._inventory = []
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(_dialog_accent_bar())
+
+        inner = QWidget()
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setContentsMargins(24, 20, 24, 24)
+        inner_layout.setSpacing(14)
+        layout.addWidget(inner)
+
+        title = QLabel("Goods Received Note (GRN)")
+        title.setObjectName("login_title")
+        inner_layout.addWidget(title)
+
+        sub = QLabel("Record stock received from a supplier. This will update inventory and log the movement.")
+        sub.setObjectName("page_subtitle")
+        sub.setWordWrap(True)
+        inner_layout.addWidget(sub)
+
+        fields = QVBoxLayout()
+        fields.setSpacing(10)
+
+        def labeled(label_text, widget, required=False):
+            box = QVBoxLayout()
+            box.setSpacing(4)
+            lbl = QLabel(f"{label_text} {'<span style=\"color:#dc2626\">*</span>' if required else ''}")
+            lbl.setObjectName("form_label")
+            lbl.setTextFormat(Qt.RichText)
+            box.addWidget(lbl)
+            box.addWidget(widget)
+            return box
+
+        self.supplier_input = QLineEdit()
+        self.supplier_input.setPlaceholderText("e.g. ABC Supplies Co.")
+        fields.addLayout(labeled("Supplier Name", self.supplier_input, required=True))
+
+        self.item_combo = QComboBox()
+        self.item_combo.setPlaceholderText("Select item...")
+        self._load_items()
+        fields.addLayout(labeled("Item", self.item_combo, required=True))
+
+        self.qty_input = QSpinBox()
+        self.qty_input.setRange(1, 9999)
+        self.qty_input.setValue(1)
+        fields.addLayout(labeled("Quantity Received", self.qty_input, required=True))
+
+        self.condition_combo = QComboBox()
+        self.condition_combo.addItems(["Good", "Damaged", "Partial"])
+        fields.addLayout(labeled("Condition", self.condition_combo))
+
+        from PyQt5.QtWidgets import QDateEdit
+        from PyQt5.QtCore import QDate
+        self.date_input = QDateEdit()
+        self.date_input.setCalendarPopup(True)
+        self.date_input.setDate(QDate.currentDate())
+        fields.addLayout(labeled("Date Received", self.date_input))
+
+        self.notes_input = QLineEdit()
+        self.notes_input.setPlaceholderText("Optional notes...")
+        fields.addLayout(labeled("Notes", self.notes_input))
+
+        inner_layout.addLayout(fields)
+
+        btns = QHBoxLayout()
+        btn_cancel = QPushButton("Cancel")
+        set_button_kind(btn_cancel, "outline")
+        btn_cancel.clicked.connect(self.reject)
+        btn_submit = QPushButton("Submit GRN")
+        set_button_kind(btn_submit, "teal")
+        btn_submit.clicked.connect(self._submit)
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_submit)
+        inner_layout.addLayout(btns)
+
+    def _load_items(self):
+        try:
+            self._inventory = list_inventory()
+        except ApiError:
+            self._inventory = []
+        self.item_combo.clear()
+        for item in self._inventory:
+            label = f"{item['item_name']} (F{item['floor']}) — Stock: {item['quantity']}"
+            self.item_combo.addItem(label, userData=item["id"])
+
+    def _submit(self):
+        supplier = self.supplier_input.text().strip()
+        if not supplier:
+            from ui.components import warning_dialog
+            warning_dialog(self, "Validation", "Supplier name is required.")
+            return
+        if self.item_combo.count() == 0:
+            from ui.components import warning_dialog
+            warning_dialog(self, "Validation", "No items available.")
+            return
+        item_id = self.item_combo.currentData()
+        qty = self.qty_input.value()
+        condition = self.condition_combo.currentText()
+        date_str = self.date_input.date().toString("yyyy-MM-dd")
+        notes = self.notes_input.text().strip() or None
+        try:
+            receive_stock_grn(item_id, supplier, qty, condition, date_str, notes)
+            from ui.components import info_dialog
+            info_dialog(self, "Success", f"GRN recorded. Added {qty} units from {supplier}.")
+            self.accept()
+        except ApiError as exc:
+            from ui.components import error_dialog
+            error_dialog(self, "Error", str(exc))
 
 
 class ItemDialog(QDialog):
@@ -581,19 +911,27 @@ class ItemDialog(QDialog):
         btn_pick = QPushButton("Choose Image")
         set_button_kind(btn_pick, "outline")
         btn_pick.clicked.connect(self._pick_image)
-        btn_clear = QPushButton("Remove")
-        set_button_kind(btn_clear, "danger")
-        btn_clear.clicked.connect(self._clear_image)
+        self.btn_clear = QPushButton("Remove")
+        set_button_kind(self.btn_clear, "danger")
+        self.btn_clear.clicked.connect(self._clear_image)
+        self.btn_clear.setVisible(False)  # only show when image is loaded
         img_hint = QLabel("PNG, JPG or JPEG  ·  max 2MB")
         img_hint.setObjectName("stat_label")
         img_btn_col.addWidget(btn_pick)
-        img_btn_col.addWidget(btn_clear)
+        img_btn_col.addWidget(self.btn_clear)
         img_btn_col.addWidget(img_hint)
         img_layout.addLayout(img_btn_col)
         layout.addWidget(img_frame)
 
-        form = QFormLayout()
-        form.setSpacing(10)
+        def labeled(label_text, widget, required=False):
+            box = QVBoxLayout()
+            box.setSpacing(4)
+            lbl = QLabel(f"{label_text} {'<span style=\"color:#dc2626\">*</span>' if required else ''}")
+            lbl.setObjectName("form_label")
+            lbl.setTextFormat(Qt.RichText)
+            box.addWidget(lbl)
+            box.addWidget(widget)
+            return box
 
         self.code_input = QLineEdit()
         self.code_input.setPlaceholderText("e.g. ITM-011")
@@ -615,14 +953,13 @@ class ItemDialog(QDialog):
         self.price_input.setRange(0, 999999)
         self.price_input.setPrefix("PHP ")
 
-        form.addRow("Item Code *", self.code_input)
-        form.addRow("Item Name *", self.name_input)
-        form.addRow("Category", self.cat_input)
-        form.addRow("Floor (1-6) *", self.floor_input)
-        form.addRow("Quantity *", self.qty_input)
-        form.addRow("Low Stock Alert *", self.thresh_input)
-        form.addRow("Unit Price *", self.price_input)
-        layout.addLayout(form)
+        layout.addLayout(labeled("Item Code", self.code_input, required=True))
+        layout.addLayout(labeled("Item Name", self.name_input, required=True))
+        layout.addLayout(labeled("Category", self.cat_input))
+        layout.addLayout(labeled("Floor (1–6)", self.floor_input, required=True))
+        layout.addLayout(labeled("Current Quantity", self.qty_input, required=True))
+        layout.addLayout(labeled("Low Stock Alert Threshold", self.thresh_input, required=True))
+        layout.addLayout(labeled("Unit Price", self.price_input, required=True))
 
         btns = QHBoxLayout()
         btn_cancel = QPushButton("Cancel")
@@ -650,6 +987,7 @@ class ItemDialog(QDialog):
         pix = QPixmap(path).scaled(80, 70, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.img_preview.setPixmap(pix)
         self.img_preview.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+        self.btn_clear.setVisible(True)
 
     def _clear_image(self):
         self._image_b64 = None
@@ -658,6 +996,7 @@ class ItemDialog(QDialog):
         self.img_preview.setStyleSheet(
             f"background:{COLORS['surface']}; border-radius:8px; color:{COLORS['muted']}; font-size:11px;"
         )
+        self.btn_clear.setVisible(False)
 
     def _load_data(self):
         try:
@@ -684,6 +1023,7 @@ class ItemDialog(QDialog):
                     pix.loadFromData(base64.b64decode(img_data))
                     self.img_preview.setPixmap(pix.scaled(80, 70, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                     self.img_preview.setStyleSheet(f"background:{COLORS['surface']}; border-radius:8px;")
+                    self.btn_clear.setVisible(True)
                 except Exception:
                     pass
 
@@ -732,20 +1072,42 @@ class RestockDialog(QDialog):
             return
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(_dialog_accent_bar())
+        inner = QWidget()
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(24, 20, 24, 24)
+        il.setSpacing(14)
+        layout.addWidget(inner)
 
         title = QLabel(row["item_name"])
         title.setObjectName("login_title")
-        layout.addWidget(title)
-        layout.addWidget(QLabel(f"Current Qty: {row['quantity']}"))
+        il.addWidget(title)
 
-        form = QFormLayout()
+        current_frame = QFrame()
+        current_frame.setObjectName("alert_teal")
+        current_layout = QHBoxLayout(current_frame)
+        current_layout.setContentsMargins(12, 9, 12, 9)
+        current_lbl = QLabel(f"Current Stock: {row['quantity']} units  ·  Floor {row['floor']}")
+        current_lbl.setObjectName("alert_text_teal")
+        current_layout.addWidget(current_lbl)
+        il.addWidget(current_frame)
+
+        qty_label = QLabel("Quantity to Add <span style=\"color:#dc2626\">*</span>")
+        qty_label.setObjectName("form_label")
+        qty_label.setTextFormat(Qt.RichText)
+        il.addWidget(qty_label)
+
         self.add_qty = QSpinBox()
         self.add_qty.setRange(1, 9999)
         self.add_qty.setValue(10)
-        form.addRow("Add Quantity:", self.add_qty)
-        layout.addLayout(form)
+        il.addWidget(self.add_qty)
+
+        hint = QLabel("New total after restock will be shown in the inventory.")
+        hint.setObjectName("page_subtitle")
+        hint.setWordWrap(True)
+        il.addWidget(hint)
 
         btns = QHBoxLayout()
         btn_cancel = QPushButton("Cancel")
@@ -756,7 +1118,7 @@ class RestockDialog(QDialog):
         btn_ok.clicked.connect(self._restock)
         btns.addWidget(btn_cancel)
         btns.addWidget(btn_ok)
-        layout.addLayout(btns)
+        il.addLayout(btns)
 
     def _restock(self):
         try:
@@ -785,20 +1147,42 @@ class StockOutDialog(QDialog):
             return
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(_dialog_accent_bar())
+        inner = QWidget()
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(24, 20, 24, 24)
+        il.setSpacing(14)
+        layout.addWidget(inner)
 
         title = QLabel(row["item_name"])
         title.setObjectName("login_title")
-        layout.addWidget(title)
-        layout.addWidget(QLabel(f"Current Qty: {row['quantity']}"))
+        il.addWidget(title)
 
-        form = QFormLayout()
+        current_frame = QFrame()
+        current_frame.setObjectName("alert_navy")
+        current_layout = QHBoxLayout(current_frame)
+        current_layout.setContentsMargins(12, 9, 12, 9)
+        current_lbl = QLabel(f"Current Stock: {row['quantity']} units  ·  Floor {row['floor']}")
+        current_lbl.setObjectName("alert_text_navy")
+        current_layout.addWidget(current_lbl)
+        il.addWidget(current_frame)
+
+        qty_label = QLabel("Quantity to Remove <span style=\"color:#dc2626\">*</span>")
+        qty_label.setObjectName("form_label")
+        qty_label.setTextFormat(Qt.RichText)
+        il.addWidget(qty_label)
+
         self.remove_qty = QSpinBox()
         self.remove_qty.setRange(1, max(row["quantity"], 1))
         self.remove_qty.setValue(1)
-        form.addRow("Remove Quantity:", self.remove_qty)
-        layout.addLayout(form)
+        il.addWidget(self.remove_qty)
+
+        if row["quantity"] == 0:
+            warn = QLabel("⚠ This item is already out of stock.")
+            warn.setStyleSheet("color: #dc2626; font-size: 12px; background: transparent;")
+            il.addWidget(warn)
 
         btns = QHBoxLayout()
         btn_cancel = QPushButton("Cancel")
@@ -810,7 +1194,7 @@ class StockOutDialog(QDialog):
         btn_ok.clicked.connect(self._stock_out)
         btns.addWidget(btn_cancel)
         btns.addWidget(btn_ok)
-        layout.addLayout(btns)
+        il.addLayout(btns)
 
     def _stock_out(self):
         try:
@@ -819,3 +1203,77 @@ class StockOutDialog(QDialog):
             self.accept()
         except ApiError as exc:
             error_dialog(self, "Error", str(exc))
+
+
+class ItemHistoryDialog(QDialog):
+    def __init__(self, parent, item_id):
+        super().__init__(parent)
+        self.item_id = item_id
+        self.setWindowTitle("Stock Movement History")
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+        self.setAttribute(Qt.WA_StyledBackground)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = QLabel("Movement History")
+        title.setObjectName("login_title")
+        layout.addWidget(title)
+
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels([
+            "DATE", "CHANGE", "REASON", "ACTOR"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        configure_table(self.table)
+        layout.addWidget(self.table)
+
+        btn_close = QPushButton("Close")
+        set_button_kind(btn_close, "outline")
+        btn_close.clicked.connect(self.reject)
+        layout.addWidget(btn_close)
+
+        self._load_history()
+
+    def _load_history(self):
+        try:
+            from utils.api_client import get_stock_movements
+            movements = get_stock_movements(self.item_id)
+        except Exception:
+            movements = []
+
+        self.table.setRowCount(len(movements))
+        for i, m in enumerate(movements):
+            change = int(m.get("quantity_change", 0))
+            change_str = f"+{change}" if change > 0 else str(change)
+            change_color = "#16a34a" if change > 0 else "#dc2626"
+
+            raw_date = m.get("created_at", "")[:16].replace("T", " ")
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(raw_date, "%Y-%m-%d %H:%M")
+                formatted_date = dt.strftime("%b %d, %H:%M")
+            except Exception:
+                formatted_date = raw_date
+
+            values = [
+                formatted_date,
+                change_str,
+                m.get("reason", ""),
+                m.get("actor", "system") or "system",
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(i, col, table_item(
+                    value,
+                    color=change_color if col == 1 else None,
+                    bold=col == 1
+                ))
+            self.table.setRowHeight(i, 44)

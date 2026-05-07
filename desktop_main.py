@@ -59,11 +59,13 @@ def main():
             login_page = LoginPage()
             if login_page.exec_() == LoginPage.Accepted:
                 window = MainWindow(
-                    username=getattr(login_page, "authenticated_username", None),
-                    display_name=getattr(login_page, "authenticated_display_name", None),
-                    role=getattr(login_page, "authenticated_role", None),
-                    permissions=getattr(login_page, "authenticated_permissions", None),
-                )
+                username=getattr(login_page, "authenticated_username", None),
+                display_name=getattr(login_page, "authenticated_display_name", None),
+                role=getattr(login_page, "authenticated_role", None),
+                permissions=getattr(login_page, "authenticated_permissions", None),
+                low_stock_count=getattr(login_page, "low_stock_count", 0),
+            )
+                
                 window.logout_requested.connect(
                     lambda: (clear_session(), window.close(), show_login())
                 )
