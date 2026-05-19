@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlite3 import Error
+from mysql.connector import Error
 
 from backend.auth.security import can_assign_role, current_user_from_request
 from database.connection import get_connection, hash_password

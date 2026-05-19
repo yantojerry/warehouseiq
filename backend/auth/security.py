@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from sqlite3 import Error
+from mysql.connector import Error
 
 from database.connection import get_connection
 from backend.auth.permission_catalog import PERMISSIONS

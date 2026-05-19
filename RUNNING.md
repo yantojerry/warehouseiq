@@ -31,7 +31,7 @@ Password:
 Database: warehouseiq
 ```
 
-If your XAMPP MySQL is using the default port `3306`, the app will try that automatically when `3307` is not available. You can also edit `.env` and set:
+If your XAMPP MySQL is using the default port `3306`, edit `.env` and set:
 
 ```powershell
 $env:WAREHOUSEIQ_DB_PORT="3306"
@@ -168,7 +168,7 @@ python -m pip install -r requirements.txt
 Make sure:
 
 - XAMPP MySQL is running
-- it is using port `3307` or `3306`
+- it is using the exact port configured in `.env`, usually `3307`
 - the root account allows blank password if you are using the current config
 
 ### Desktop app does not open

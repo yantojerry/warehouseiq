@@ -2,7 +2,6 @@ import hashlib
 import os
 import re
 import secrets
-import sqlite3
 from pathlib import Path
 
 from backend.auth.permission_catalog import PERMISSIONS
@@ -11,7 +10,6 @@ from backend.auth.roles import ROLE_ADMIN, ROLE_SUPER_ADMIN, SYSTEM_ROLES, canon
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
-DB_PATH = Path(os.getenv("WAREHOUSEIQ_DB_PATH", Path(__file__).resolve().parent.parent / "warehouse.db"))
 _SCHEMA_VERIFIED = False
 
 SAMPLE_ITEMS = [
@@ -32,14 +30,6 @@ def _load_powershell_env_file():
 
 
 _load_powershell_env_file()
-
-
-def _db_backend():
-    return os.getenv("WAREHOUSEIQ_DB_BACKEND", "sqlite").strip().lower()
-
-
-def _using_mysql():
-    return _db_backend() in {"mysql", "mariadb"}
 
 
 def hash_password(password):
@@ -68,69 +58,6 @@ def verify_password(password, stored):
     return secrets.compare_digest(password or "", stored)
 
 
-class SQLiteCursor:
-    def __init__(self, cursor, dictionary=False):
-        self._cursor = cursor
-        self._dictionary = dictionary
-
-    @property
-    def lastrowid(self):
-        return self._cursor.lastrowid
-
-    @property
-    def rowcount(self):
-        return self._cursor.rowcount
-
-    def execute(self, query, params=None):
-        query = _translate_query(query)
-        self._cursor.execute(query, tuple(params or ()))
-        return self
-
-    def executemany(self, query, seq_of_params):
-        query = _translate_query(query)
-        self._cursor.executemany(query, seq_of_params)
-        return self
-
-    def fetchone(self):
-        row = self._cursor.fetchone()
-        return self._convert(row)
-
-    def fetchall(self):
-        return [self._convert(row) for row in self._cursor.fetchall()]
-
-    def close(self):
-        self._cursor.close()
-
-    def _convert(self, row):
-        if row is None:
-            return None
-        if self._dictionary:
-            return dict(row)
-        return tuple(row)
-
-
-class SQLiteConnection:
-    def __init__(self, path):
-        self._conn = sqlite3.connect(path, timeout=20)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-
-    def cursor(self, dictionary=False):
-        return SQLiteCursor(self._conn.cursor(), dictionary=dictionary)
-
-    def execute(self, query, params=None):
-        return self._conn.execute(_translate_query(query), tuple(params or ()))
-
-    def commit(self):
-        self._conn.commit()
-
-    def rollback(self):
-        self._conn.rollback()
-
-    def close(self):
-        self._conn.close()
-
-
 class MySQLCursor:
     def __init__(self, cursor, dictionary=False):
         self._cursor = cursor
@@ -145,12 +72,12 @@ class MySQLCursor:
         return self._cursor.rowcount
 
     def execute(self, query, params=None):
-        query = _translate_query(query, "mysql")
+        query = _translate_query(query)
         self._cursor.execute(query, tuple(params or ()))
         return self
 
     def executemany(self, query, seq_of_params):
-        query = _translate_query(query, "mysql")
+        query = _translate_query(query)
         self._cursor.executemany(query, seq_of_params)
         return self
 
@@ -183,14 +110,7 @@ class MySQLConnection:
             "autocommit": False,
         }
         database = os.getenv("WAREHOUSEIQ_DB_NAME", "warehouseiq")
-        try:
-            self._conn = mysql.connector.connect(**config)
-        except mysql.connector.Error:
-            if config["host"] in {"127.0.0.1", "localhost"} and config["port"] == 3307:
-                config["port"] = 3306
-                self._conn = mysql.connector.connect(**config)
-            else:
-                raise
+        self._conn = mysql.connector.connect(**config)
         cursor = self._conn.cursor()
         try:
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
@@ -204,7 +124,7 @@ class MySQLConnection:
 
     def execute(self, query, params=None):
         cursor = self._conn.cursor()
-        cursor.execute(_translate_query(query, "mysql"), tuple(params or ()))
+        cursor.execute(_translate_query(query), tuple(params or ()))
         return cursor
 
     def commit(self):
@@ -217,21 +137,7 @@ class MySQLConnection:
         self._conn.close()
 
 
-SQLiteConnection.dialect = "sqlite"
-
-
-def _translate_query(query, dialect="sqlite"):
-    if dialect == "mysql":
-        return _translate_mysql_query(query)
-    translated = (query or "").replace("INSERT " + "IGNORE", "INSERT " + "OR IGNORE").replace("%s", "?")
-    translated = translated.replace("AUTO_INCREMENT", "AUTOINCREMENT")
-    translated = translated.replace("id INT PRIMARY KEY AUTOINCREMENT", "id INTEGER PRIMARY KEY AUTOINCREMENT")
-    translated = translated.replace("NOW()", "CURRENT_TIMESTAMP")
-    translated = translated.replace("CURDATE()", "DATE('now')")
-    return translated
-
-
-def _translate_mysql_query(query):
+def _translate_query(query):
     translated = query or ""
     translated = translated.replace("?", "%s")
     translated = translated.replace("INSERT OR IGNORE", "INSERT IGNORE")
@@ -313,11 +219,8 @@ def _mysql_convert_create_table(query):
 def _table_columns(connection, table):
     cursor = connection.cursor(dictionary=True)
     try:
-        if getattr(connection, "dialect", "sqlite") == "mysql":
-            cursor.execute(f"SHOW COLUMNS FROM {table}")
-            return {row["Field"] for row in cursor.fetchall()}
-        cursor.execute(f"PRAGMA table_info({table})")
-        return {row["name"] for row in cursor.fetchall()}
+        cursor.execute(f"SHOW COLUMNS FROM {table}")
+        return {row["Field"] for row in cursor.fetchall()}
     finally:
         cursor.close()
 
@@ -326,8 +229,7 @@ def _add_column(connection, table, column, definition):
     if column not in _table_columns(connection, table):
         cursor = connection.cursor()
         try:
-            if getattr(connection, "dialect", "sqlite") == "mysql":
-                definition = _mysql_column_definition(column, definition)
+            definition = _mysql_column_definition(column, definition)
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         finally:
             cursor.close()
@@ -345,22 +247,13 @@ def _safe_execute_schema(cursor, query, connection):
     try:
         cursor.execute(query)
     except Exception:
-        if getattr(connection, "dialect", "sqlite") == "mysql" and "CREATE INDEX" in query.upper():
+        if "CREATE INDEX" in query.upper():
             return
         raise
 
 
-def ensure_database_exists():
-    if _using_mysql():
-        return
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if not DB_PATH.exists():
-        DB_PATH.touch()
-
-
 def get_connection():
-    ensure_database_exists()
-    connection = MySQLConnection() if _using_mysql() else SQLiteConnection(str(DB_PATH))
+    connection = MySQLConnection()
     global _SCHEMA_VERIFIED
     if not _SCHEMA_VERIFIED:
         _ensure_schema(connection)
@@ -695,24 +588,11 @@ def _ensure_schema(connection):
         _safe_execute_schema(cursor, "CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(item_id)", connection)
         _safe_execute_schema(cursor, "CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key)", connection)
         _safe_execute_schema(cursor, "CREATE INDEX IF NOT EXISTS idx_sessions_hash ON user_sessions(token_hash)", connection)
-        if getattr(connection, "dialect", "sqlite") == "sqlite":
-            cursor.execute(
-                """
-                CREATE TRIGGER IF NOT EXISTS inventory_updated_at
-                AFTER UPDATE ON inventory
-                FOR EACH ROW
-                WHEN NEW.updated_at = OLD.updated_at
-                BEGIN
-                    UPDATE inventory SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-                END
-                """
-            )
         _ensure_columns(connection)
         _backfill_invoice_customer_ids(connection)
         _ensure_roles_and_permissions(connection)
         _apply_role_permission_migrations(connection)
         _ensure_super_admin_account(connection)
-        _repair_payment_history_fk(connection)
         connection.commit()
     finally:
         cursor.close()
@@ -768,8 +648,7 @@ def _ensure_columns(connection):
     for table, columns in additions.items():
         for column, definition in columns.items():
             _add_column(connection, table, column, definition)
-    if getattr(connection, "dialect", "sqlite") == "mysql":
-        _migrate_legacy_user_passwords(connection)
+    _migrate_legacy_user_passwords(connection)
 
 
 def _migrate_legacy_user_passwords(connection):
@@ -799,19 +678,6 @@ def _backfill_invoice_customer_ids(connection):
             JOIN customers c ON c.full_name = i.customer_name
             SET i.customer_id = c.id
             WHERE i.customer_id IS NULL
-            """
-        )
-    except sqlite3.Error:
-        cursor.execute(
-            """
-            UPDATE invoices
-            SET customer_id = (
-                SELECT c.id
-                FROM customers c
-                WHERE c.full_name = invoices.customer_name
-                LIMIT 1
-            )
-            WHERE customer_id IS NULL
             """
         )
     finally:
@@ -1212,41 +1078,3 @@ def _ensure_super_admin_account(connection):
     finally:
         cursor.close()
 
-
-def _repair_payment_history_fk(connection):
-    if getattr(connection, "dialect", "sqlite") == "mysql":
-        return
-    cursor = connection.cursor(dictionary=True)
-    try:
-        cursor.execute("PRAGMA foreign_key_list(payment_history)")
-        refs = cursor.fetchall()
-        if not any(row.get("table") == "payments_legacy" for row in refs):
-            return
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS payment_history_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                payment_id INTEGER NOT NULL,
-                invoice_id INTEGER,
-                amount_paid REAL NOT NULL,
-                payment_method TEXT,
-                note TEXT,
-                recorded_by TEXT,
-                paid_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (payment_id) REFERENCES payments(id)
-            )
-            """
-        )
-        cursor.execute(
-            """
-            INSERT INTO payment_history_new (
-                id, payment_id, invoice_id, amount_paid, payment_method, note, recorded_by, paid_at
-            )
-            SELECT id, payment_id, invoice_id, amount_paid, payment_method, note, recorded_by, paid_at
-            FROM payment_history
-            """
-        )
-        cursor.execute("DROP TABLE payment_history")
-        cursor.execute("ALTER TABLE payment_history_new RENAME TO payment_history")
-    finally:
-        cursor.close()

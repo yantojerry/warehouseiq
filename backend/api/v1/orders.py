@@ -3,7 +3,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from sqlite3 import Error
+from mysql.connector import Error
 
 from backend.auth.security import current_user_from_request
 from backend.core.helpers import generate_order_number

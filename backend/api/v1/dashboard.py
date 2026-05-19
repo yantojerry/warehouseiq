@@ -1,7 +1,7 @@
 # Owns version 1 dashboard API endpoints.
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlite3 import Error
+from mysql.connector import Error
 
 from backend.auth.security import current_user_from_request, effective_permission_keys
 from database.connection import get_connection

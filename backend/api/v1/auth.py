@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlite3 import Error
+from mysql.connector import Error
 
 from backend.auth.security import create_session, permission_payload_for_user
 from database.connection import get_connection, hash_password, verify_password

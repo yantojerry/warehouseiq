@@ -46,7 +46,6 @@ pip install -r requirements.txt
 This project uses MySQL through `mysql-connector-python`. The included `.env` is already set up for a local XAMPP install:
 
 ```powershell
-$env:WAREHOUSEIQ_DB_BACKEND="mysql"
 $env:WAREHOUSEIQ_DB_HOST="127.0.0.1"
 $env:WAREHOUSEIQ_DB_PORT="3307"
 $env:WAREHOUSEIQ_DB_USER="root"
@@ -54,7 +53,7 @@ $env:WAREHOUSEIQ_DB_PASSWORD=""
 $env:WAREHOUSEIQ_DB_NAME="warehouseiq"
 ```
 
-Start XAMPP MySQL before running the app. If your XAMPP uses port `3306`, the app will fall back to it automatically, or you can edit `.env`.
+Start XAMPP MySQL before running the app. If your XAMPP uses port `3306`, edit `.env` and set `WAREHOUSEIQ_DB_PORT` to `3306`.
 
 ### 4. Run the app
 ```bash

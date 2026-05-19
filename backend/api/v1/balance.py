@@ -1,7 +1,7 @@
 # Owns version 1 balance API endpoints.
 
 from fastapi import APIRouter, HTTPException
-from sqlite3 import Error
+from mysql.connector import Error
 
 from database.connection import get_connection
 

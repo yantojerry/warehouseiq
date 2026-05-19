@@ -3,7 +3,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlite3 import Error
+from mysql.connector import Error
 
 from database.connection import get_connection
 

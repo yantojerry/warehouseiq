@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from sqlite3 import Error
+from mysql.connector import Error
 
 from backend.domains.shipments.schemas import PickStatusUpdate
 from database.connection import get_connection
