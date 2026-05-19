@@ -1,0 +1,6 @@
+PyQt5>=5.15.0
+PyQt5-sip>=12.11.0
+fastapi
+uvicorn[standard]
+qtawesome
+mysql-connector-python
